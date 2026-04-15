@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useMemo } from 'react'
 import { usePlaylistTracks, removeFromPlaylist, updatePlaylistCover } from '../hooks/usePlaylists'
 import type { Playlist, Track } from '../db'
 import { CoverArt } from './CoverArt'
@@ -25,17 +25,23 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
   const [localCover, setLocalCover] = useState<Blob | null>(playlist.coverBlob ?? null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Sync if parent navigates to a different playlist without remounting
+  useEffect(() => { setLocalCover(playlist.coverBlob ?? null) }, [playlist.coverBlob])
+
   const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !playlist.id) return
-    const blob = new Blob([await file.arrayBuffer()], { type: file.type })
-    setLocalCover(blob)
-    await updatePlaylistCover(playlist.id, blob)
+    setLocalCover(file)
+    await updatePlaylistCover(playlist.id, file)
     e.target.value = ''
   }
 
-  // Blurred background — use custom cover, else first track's cover
-  const bgBlob = localCover ?? tracks[0]?.coverBlob ?? null
+  // Blurred background — use custom cover, else first track's cover.
+  // Memoized so useLiveQuery refires don't revoke/recreate the URL when data is unchanged.
+  const bgBlob = useMemo(
+    () => localCover ?? tracks[0]?.coverBlob ?? null,
+    [localCover, tracks]
+  )
   const [bgUrl, setBgUrl] = useState<string | null>(null)
   useEffect(() => {
     if (!bgBlob) { setBgUrl(null); return }

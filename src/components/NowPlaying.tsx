@@ -50,8 +50,9 @@ export function NowPlaying({
     return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
   }
 
-  const displayPct = dragPct !== null
-    ? dragPct * 100
+  const isDragging = dragPct !== null
+  const displayPct = isDragging
+    ? dragPct! * 100
     : (duration > 0 ? (position / duration) * 100 : 0)
 
   // Swipe down to dismiss
@@ -184,7 +185,7 @@ export function NowPlaying({
             <div
               className="w-full rounded-full relative overflow-hidden"
               style={{
-                height: dragPct !== null ? 5 : 3,
+                height: isDragging ? 5 : 3,
                 background: 'rgba(255,255,255,0.2)',
                 transition: 'height 0.15s ease',
               }}
@@ -194,19 +195,18 @@ export function NowPlaying({
                 style={{ width: `${displayPct}%` }}
               />
             </div>
-            {/* Thumb */}
             <div
               className="absolute bg-white rounded-full shadow-lg pointer-events-none top-1/2 -translate-y-1/2"
               style={{
-                width: dragPct !== null ? 22 : 14,
-                height: dragPct !== null ? 22 : 14,
-                left: `calc(${displayPct}% - ${dragPct !== null ? 11 : 7}px)`,
+                width: isDragging ? 22 : 14,
+                height: isDragging ? 22 : 14,
+                left: `calc(${displayPct}% - ${isDragging ? 11 : 7}px)`,
                 transition: 'width 0.15s ease, height 0.15s ease, left 0s',
               }}
             />
           </div>
           <div className="flex justify-between text-xs text-white/40 -mt-1">
-            <span>{formatTime(dragPct !== null ? dragPct * duration : position)}</span>
+            <span>{formatTime(isDragging ? dragPct! * duration : position)}</span>
             <span>{formatTime(duration)}</span>
           </div>
         </div>
