@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react'
 import type { PlayerState } from '../hooks/usePlayer'
 import { CoverArt } from './CoverArt'
 import {
@@ -28,16 +29,30 @@ export function NowPlaying({
   onToggleShuffle, onCycleRepeat, onClose,
 }: Props) {
   const { currentTrack, playing, position, duration, shuffle, repeat } = state
-  if (!currentTrack) return null
 
-  const pct = duration > 0 ? (position / duration) * 100 : 0
+  // Seek bar — pointer events for reliable iOS touch scrubbing
+  const barRef = useRef<HTMLDivElement>(null)
+  const dragging = useRef(false)
+  const [dragPct, setDragPct] = useState<number | null>(null)
+
+  const pctFromPointer = (e: React.PointerEvent) => {
+    if (!barRef.current) return 0
+    const rect = barRef.current.getBoundingClientRect()
+    return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+  }
+
+  const displayPct = dragPct !== null
+    ? dragPct * 100
+    : (duration > 0 ? (position / duration) * 100 : 0)
+
+  if (!currentTrack) return null
 
   return (
     <div
       className="fixed inset-0 bg-black flex flex-col z-50 select-none"
       style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      {/* Drag handle / close */}
+      {/* Drag handle */}
       <div className="flex items-center justify-center pt-2 pb-1">
         <div className="w-10 h-1 rounded-full bg-white/20" />
       </div>
@@ -55,7 +70,7 @@ export function NowPlaying({
         <div className="w-9" />
       </div>
 
-      {/* Cover art — fills available space */}
+      {/* Cover art */}
       <div className="flex-1 flex items-center justify-center px-8 py-2">
         <CoverArt
           blob={currentTrack.coverBlob}
@@ -70,38 +85,54 @@ export function NowPlaying({
         <p className="text-gray-400 text-sm truncate mt-0.5">{currentTrack.artist}</p>
       </div>
 
-      {/* Seek bar */}
-      <div className="px-6 pb-2">
-        <div className="relative h-1 bg-white/20 rounded-full mb-1 cursor-pointer"
-          onClick={e => {
-            const rect = e.currentTarget.getBoundingClientRect()
-            const ratio = (e.clientX - rect.left) / rect.width
-            onSeek(ratio * (duration || 1))
+      {/* Seek bar — touch-friendly pointer-event scrubber */}
+      <div className="px-6 pb-1">
+        {/* Tall invisible hit area so finger doesn't have to land exactly on the thin bar */}
+        <div
+          ref={barRef}
+          className="relative flex items-center touch-none cursor-pointer"
+          style={{ height: 36 }}
+          onPointerDown={e => {
+            e.currentTarget.setPointerCapture(e.pointerId)
+            dragging.current = true
+            const pct = pctFromPointer(e)
+            setDragPct(pct)
+            onSeek(pct * (duration || 1))
+          }}
+          onPointerMove={e => {
+            if (!dragging.current) return
+            const pct = pctFromPointer(e)
+            setDragPct(pct)
+            onSeek(pct * (duration || 1))
+          }}
+          onPointerUp={e => {
+            if (!dragging.current) return
+            dragging.current = false
+            const pct = pctFromPointer(e)
+            setDragPct(null)
+            onSeek(pct * (duration || 1))
+          }}
+          onPointerCancel={() => {
+            dragging.current = false
+            setDragPct(null)
           }}
         >
-          <div
-            className="absolute inset-y-0 left-0 bg-white rounded-full"
-            style={{ width: `${pct}%` }}
-          />
+          {/* Track */}
+          <div className="w-full h-1 bg-white/20 rounded-full relative">
+            <div
+              className="absolute inset-y-0 left-0 bg-white rounded-full"
+              style={{ width: `${displayPct}%` }}
+            />
+          </div>
           {/* Thumb */}
           <div
-            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow"
-            style={{ left: `calc(${pct}% - 6px)` }}
+            className="absolute w-4 h-4 bg-white rounded-full shadow-lg top-1/2 -translate-y-1/2 pointer-events-none"
+            style={{ left: `calc(${displayPct}% - 8px)` }}
           />
         </div>
-        {/* Hidden range for touch scrubbing */}
-        <input
-          type="range"
-          min={0}
-          max={duration || 1}
-          step={0.5}
-          value={position}
-          onChange={e => onSeek(parseFloat(e.target.value))}
-          className="absolute opacity-0 w-[calc(100%-3rem)] h-5 -mt-3 cursor-pointer"
-          style={{ left: '1.5rem' }}
-        />
-        <div className="flex justify-between text-xs text-gray-500 mt-2">
-          <span>{formatTime(position)}</span>
+
+        <div className="flex justify-between text-xs text-gray-500 mt-1">
+          <span>{formatTime(dragPct !== null ? dragPct * duration : position)}</span>
           <span>{formatTime(duration)}</span>
         </div>
       </div>
@@ -110,7 +141,7 @@ export function NowPlaying({
       <div className="flex items-center justify-between px-8 pb-4 pt-2">
         <button
           onClick={onToggleShuffle}
-          className={`w-10 h-10 flex items-center justify-center transition-colors active:opacity-50 ${
+          className={`w-10 h-10 flex items-center justify-center active:opacity-50 transition-colors ${
             shuffle ? 'text-white' : 'text-white/30'
           }`}
           aria-label="Shuffle"
@@ -144,7 +175,7 @@ export function NowPlaying({
 
         <button
           onClick={onCycleRepeat}
-          className={`w-10 h-10 flex items-center justify-center transition-colors active:opacity-50 ${
+          className={`w-10 h-10 flex items-center justify-center active:opacity-50 transition-colors ${
             repeat !== 'none' ? 'text-white' : 'text-white/30'
           }`}
           aria-label="Repeat"

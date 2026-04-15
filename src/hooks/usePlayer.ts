@@ -25,7 +25,7 @@ export function usePlayer() {
     playing: false,
     position: 0,
     duration: 0,
-    shuffle: false,
+    shuffle: localStorage.getItem('shuffle') === 'true',
     repeat: 'none',
   })
 
@@ -147,7 +147,11 @@ export function usePlayer() {
   }, [loadTrack])
 
   const toggleShuffle = useCallback(() => {
-    setState(s => ({ ...s, shuffle: !s.shuffle }))
+    setState(s => {
+      const next = !s.shuffle
+      try { localStorage.setItem('shuffle', String(next)) } catch {}
+      return { ...s, shuffle: next }
+    })
   }, [])
 
   const cycleRepeat = useCallback(() => {

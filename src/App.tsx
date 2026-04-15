@@ -5,11 +5,16 @@ import { NowPlaying } from './components/NowPlaying'
 import { MiniPlayer } from './components/MiniPlayer'
 import { ImportButton } from './components/ImportButton'
 import { StorageInfo } from './components/StorageInfo'
-import type { Track } from './db'
+import { TabBar, type Tab } from './components/TabBar'
+import { PlaylistList } from './components/PlaylistList'
+import { PlaylistDetail } from './components/PlaylistDetail'
+import type { Track, Playlist } from './db'
 
 export default function App() {
   const { state, playQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat } = usePlayer()
   const [showNowPlaying, setShowNowPlaying] = useState(false)
+  const [tab, setTab] = useState<Tab>('songs')
+  const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null)
 
   // Request persistent storage on first use
   useEffect(() => {
@@ -23,21 +28,53 @@ export default function App() {
     setShowNowPlaying(true)
   }
 
+  const handlePlayShuffle = (tracks: Track[]) => {
+    const idx = Math.floor(Math.random() * tracks.length)
+    // Enable shuffle then play
+    if (!state.shuffle) toggleShuffle()
+    playQueue(tracks, idx)
+    setShowNowPlaying(true)
+  }
+
+  const handleTabChange = (t: Tab) => {
+    setTab(t)
+    if (t === 'songs') setSelectedPlaylist(null)
+  }
+
+  const showImportButton = tab === 'songs'
+
   return (
     <div className="flex flex-col h-full bg-black text-white" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-white/8 shrink-0">
-        <h1 className="text-xl font-bold tracking-tight">Music</h1>
-        <ImportButton />
+        <h1 className="text-xl font-bold tracking-tight">
+          {tab === 'playlists' && selectedPlaylist ? selectedPlaylist.name : 'Music'}
+        </h1>
+        {showImportButton && <ImportButton />}
       </div>
 
-      {/* Library */}
+      {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Library
-          onPlay={handlePlay}
-          currentTrackId={state.currentTrack?.id}
-          playing={state.playing}
-        />
+        {tab === 'songs' && (
+          <Library
+            onPlay={handlePlay}
+            currentTrackId={state.currentTrack?.id}
+            playing={state.playing}
+          />
+        )}
+        {tab === 'playlists' && !selectedPlaylist && (
+          <PlaylistList onSelect={setSelectedPlaylist} />
+        )}
+        {tab === 'playlists' && selectedPlaylist && (
+          <PlaylistDetail
+            playlist={selectedPlaylist}
+            currentTrackId={state.currentTrack?.id}
+            playing={state.playing}
+            onPlay={handlePlay}
+            onPlayShuffle={handlePlayShuffle}
+            onBack={() => setSelectedPlaylist(null)}
+          />
+        )}
       </div>
 
       {/* Storage info */}
@@ -52,6 +89,9 @@ export default function App() {
           onExpand={() => setShowNowPlaying(true)}
         />
       )}
+
+      {/* Tab bar */}
+      <TabBar active={tab} onChange={handleTabChange} />
 
       {/* Now Playing overlay */}
       {showNowPlaying && state.currentTrack && (
