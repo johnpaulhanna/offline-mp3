@@ -20,12 +20,12 @@ Open `http://localhost:5173` in your browser.
 
 ## Add to Home Screen on iPhone
 
-1. Open the deployed URL in **Safari** (not Chrome — PWA install only works in Safari on iOS).
+1. Open the deployed URL in **Safari** (not Chrome, PWA install only works in Safari on iOS).
 2. The **first load must be online** so the service worker installs.
 3. Tap the **Share** button (box with arrow pointing up).
 4. Scroll down and tap **Add to Home Screen**.
 5. Name it "Music" and tap **Add**.
-6. Launch from your home screen — it runs fully offline from here.
+6. Launch from your home screen, its fully offline now.
 
 ## How to use
 
