@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { importFiles } from '../lib/importTracks'
+import { PlusIcon } from './Icons'
 
 export function ImportButton() {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -30,15 +31,14 @@ export function ImportButton() {
       <button
         onClick={() => inputRef.current?.click()}
         disabled={importing}
-        className="flex items-center gap-2 bg-white text-black font-semibold text-sm px-4 py-2 rounded-full disabled:opacity-50 active:scale-95 transition-transform"
+        className="flex items-center gap-1.5 bg-white text-black text-sm font-semibold px-3.5 py-1.5 rounded-full disabled:opacity-40 active:scale-95 transition-transform"
       >
         {importing ? (
-          <>
-            <span className="animate-spin text-base">↻</span> Importing…
-          </>
+          <span className="text-xs">Importing…</span>
         ) : (
           <>
-            <span className="text-base">+</span> Add Music
+            <PlusIcon size={15} />
+            <span>Add Music</span>
           </>
         )}
       </button>

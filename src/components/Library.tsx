@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTracks, deleteTrack, type SortKey } from '../hooks/useTracks'
 import type { Track } from '../db'
 import { CoverArt } from './CoverArt'
+import { XIcon, MusicNoteIcon } from './Icons'
 
 interface Props {
   onPlay: (tracks: Track[], index: number) => void
@@ -30,30 +31,35 @@ export function Library({ onPlay, currentTrackId, playing }: Props) {
 
   if (tracks.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-4 px-6 text-center">
-        <div className="text-6xl">🎵</div>
-        <p className="text-white font-semibold text-lg">No music yet</p>
-        <p className="text-gray-400 text-sm">
-          Tap <strong>Add Music</strong> to import MP3 files from your device.
-          <br />
-          <span className="text-gray-500 text-xs mt-2 block">
-            The app must be loaded online once to install. After that it works fully offline.
-          </span>
-        </p>
+      <div className="flex flex-col items-center justify-center flex-1 gap-5 px-8 text-center">
+        <div className="w-20 h-20 rounded-2xl bg-white/5 flex items-center justify-center">
+          <MusicNoteIcon size={36} className="text-white/30" />
+        </div>
+        <div>
+          <p className="text-white font-semibold text-lg mb-1">No music yet</p>
+          <p className="text-gray-500 text-sm leading-relaxed">
+            Tap <span className="text-white font-medium">Add Music</span> to import MP3s from your Files app.
+          </p>
+          <p className="text-gray-600 text-xs mt-3">
+            Requires one online load to install, then works fully offline.
+          </p>
+        </div>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      {/* Sort bar */}
-      <div className="flex gap-1 px-4 py-2 border-b border-gray-800">
+      {/* Sort tabs */}
+      <div className="flex gap-1 px-4 py-2.5 border-b border-white/5">
         {(['title', 'artist', 'album'] as SortKey[]).map(key => (
           <button
             key={key}
             onClick={() => setSort(key)}
-            className={`text-xs px-3 py-1 rounded-full capitalize transition-colors ${
-              sort === key ? 'bg-white text-black font-semibold' : 'text-gray-400'
+            className={`text-xs px-3 py-1.5 rounded-full capitalize font-medium transition-colors ${
+              sort === key
+                ? 'bg-white/15 text-white'
+                : 'text-white/35 active:bg-white/10'
             }`}
           >
             {key}
@@ -69,32 +75,46 @@ export function Library({ onPlay, currentTrackId, playing }: Props) {
             <div
               key={track.id}
               onClick={() => onPlay(tracks, idx)}
-              className={`flex items-center gap-3 px-4 py-3 border-b border-gray-900 active:bg-gray-900 cursor-pointer ${
-                isActive ? 'bg-gray-900' : ''
+              className={`flex items-center gap-3 px-4 py-3 active:bg-white/5 cursor-pointer ${
+                isActive ? 'bg-white/5' : ''
               }`}
             >
-              <CoverArt blob={track.coverBlob} size={44} />
+              <CoverArt blob={track.coverBlob} size={48} className="rounded-lg" />
 
               <div className="flex-1 min-w-0">
-                <p className={`text-sm font-medium truncate ${isActive ? 'text-green-400' : 'text-white'}`}>
-                  {isActive && playing ? '▶ ' : ''}{track.title}
+                <p className={`text-sm font-semibold truncate leading-snug ${
+                  isActive ? 'text-white' : 'text-white'
+                }`}>
+                  {isActive && playing && (
+                    <span className="inline-block w-2 h-2 rounded-full bg-green-400 mr-1.5 mb-0.5 animate-pulse" />
+                  )}
+                  {track.title}
                 </p>
-                <p className="text-xs text-gray-400 truncate">{track.artist} — {track.album}</p>
+                <p className="text-xs text-gray-500 truncate mt-0.5">
+                  {track.artist}
+                  {track.album && track.album !== 'Unknown Album' && (
+                    <span className="text-gray-600"> · {track.album}</span>
+                  )}
+                </p>
               </div>
 
-              <span className="text-xs text-gray-500 shrink-0">{formatDuration(track.duration)}</span>
+              <span className="text-xs text-gray-600 shrink-0 tabular-nums">
+                {formatDuration(track.duration)}
+              </span>
 
               <button
                 onClick={(e) => track.id != null && handleDelete(e, track.id)}
                 disabled={deletingId === track.id}
-                className="text-gray-600 hover:text-red-400 transition-colors text-lg leading-none ml-1 shrink-0"
+                className="w-7 h-7 flex items-center justify-center text-white/20 active:text-red-400 transition-colors shrink-0 ml-0.5"
                 aria-label="Delete track"
               >
-                ×
+                <XIcon size={14} />
               </button>
             </div>
           )
         })}
+        {/* Bottom padding so last track clears mini player */}
+        <div className="h-2" />
       </div>
     </div>
   )

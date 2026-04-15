@@ -26,8 +26,8 @@ export default function App() {
   return (
     <div className="flex flex-col h-full bg-black text-white" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
-        <h1 className="text-lg font-bold">Music</h1>
+      <div className="flex items-center justify-between px-5 py-3 border-b border-white/8 shrink-0">
+        <h1 className="text-xl font-bold tracking-tight">Music</h1>
         <ImportButton />
       </div>
 
