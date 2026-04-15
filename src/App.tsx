@@ -12,7 +12,7 @@ import { PlaylistDetail } from './components/PlaylistDetail'
 import type { Track, Playlist } from './db'
 
 export default function App() {
-  const { state, playQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat } = usePlayer()
+  const { state, playQueue, playNext, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat } = usePlayer()
   const [showNowPlaying, setShowNowPlaying] = useState(false)
   const [tab, setTab] = useState<Tab>('songs')
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null)
@@ -85,6 +85,7 @@ export default function App() {
         {tab === 'songs' && (
           <Library
             onPlay={handlePlay}
+            onPlayNext={playNext}
             currentTrackId={state.currentTrack?.id}
             playing={state.playing}
           />
@@ -98,6 +99,7 @@ export default function App() {
             currentTrackId={state.currentTrack?.id}
             playing={state.playing}
             onPlay={handlePlay}
+            onPlayNext={playNext}
             onPlayShuffle={handlePlayShuffle}
             onBack={() => setSelectedPlaylist(null)}
           />
