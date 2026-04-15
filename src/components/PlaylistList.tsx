@@ -39,7 +39,7 @@ export function PlaylistList({ onSelect }: Props) {
           onChange={e => setNewName(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleCreate()}
           placeholder="New playlist name…"
-          className="flex-1 bg-white/8 text-white placeholder-gray-600 text-sm px-3 py-2 rounded-lg outline-none focus:bg-white/12"
+          className="flex-1 bg-gray-800 text-white placeholder-gray-500 text-sm px-3 py-2 rounded-lg outline-none focus:bg-gray-700"
         />
         <button
           onClick={handleCreate}
