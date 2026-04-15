@@ -8,12 +8,13 @@ import { TrackContextMenu } from './TrackContextMenu'
 
 interface Props {
   onPlay: (tracks: Track[], index: number) => void
+  onPlayAndOpen: (tracks: Track[], index: number) => void
   onPlayNext: (track: Track) => void
   currentTrackId?: number
   playing: boolean
 }
 
-export function Library({ onPlay, onPlayNext, currentTrackId, playing }: Props) {
+export function Library({ onPlay, onPlayAndOpen, onPlayNext, currentTrackId, playing }: Props) {
   const [sort, setSort] = useState<SortKey>('title')
   const [search, setSearch] = useState('')
   const [contextTrack, setContextTrack] = useState<{ track: Track; idx: number; all: Track[] } | null>(null)
@@ -160,7 +161,7 @@ export function Library({ onPlay, onPlayNext, currentTrackId, playing }: Props) 
         <TrackContextMenu
           track={contextTrack.track}
           onClose={() => setContextTrack(null)}
-          onPlay={() => { onPlay(contextTrack.all, contextTrack.idx); setContextTrack(null) }}
+          onPlay={() => { onPlayAndOpen(contextTrack.all, contextTrack.idx); setContextTrack(null) }}
           onPlayNext={() => { onPlayNext(contextTrack.track); setContextTrack(null) }}
           onAddToPlaylist={() => { setAddingTrackId(contextTrack.track.id!); setContextTrack(null) }}
           onDelete={async () => { await deleteTrack(contextTrack.track.id!); setContextTrack(null) }}

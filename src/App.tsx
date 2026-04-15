@@ -41,6 +41,10 @@ export default function App() {
 
   const handlePlay = (tracks: Track[], index: number) => {
     playQueue(tracks, index)
+  }
+
+  const handlePlayAndOpen = (tracks: Track[], index: number) => {
+    playQueue(tracks, index)
     setShowNowPlaying(true)
   }
 
@@ -85,6 +89,7 @@ export default function App() {
         {tab === 'songs' && (
           <Library
             onPlay={handlePlay}
+            onPlayAndOpen={handlePlayAndOpen}
             onPlayNext={playNext}
             currentTrackId={state.currentTrack?.id}
             playing={state.playing}
@@ -99,6 +104,7 @@ export default function App() {
             currentTrackId={state.currentTrack?.id}
             playing={state.playing}
             onPlay={handlePlay}
+            onPlayAll={handlePlayAndOpen}
             onPlayNext={playNext}
             onPlayShuffle={handlePlayShuffle}
             onBack={() => setSelectedPlaylist(null)}

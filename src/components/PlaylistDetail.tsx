@@ -11,12 +11,13 @@ interface Props {
   currentTrackId?: number
   playing: boolean
   onPlay: (tracks: Track[], index: number) => void
+  onPlayAll: (tracks: Track[], index: number) => void
   onPlayNext: (track: Track) => void
   onPlayShuffle: (tracks: Track[]) => void
   onBack: () => void
 }
 
-export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPlayNext, onPlayShuffle, onBack }: Props) {
+export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPlayAll, onPlayNext, onPlayShuffle, onBack }: Props) {
   const data = usePlaylistTracks(playlist.id!)
   const tracks = data?.tracks ?? []
   const pts = data?.pts ?? []
@@ -163,7 +164,7 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
           {tracks.length > 0 && (
             <div className="flex gap-3 px-5 pb-6">
               <button
-                onClick={() => onPlay(tracks, 0)}
+                onClick={() => onPlayAll(tracks, 0)}
                 className="flex-1 flex items-center justify-center gap-2 bg-white text-black text-sm font-bold py-3 rounded-2xl active:scale-95 transition-transform"
               >
                 <PlayIcon size={14} /> Play
@@ -224,7 +225,7 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
         <TrackContextMenu
           track={contextTrack.track}
           onClose={() => setContextTrack(null)}
-          onPlay={() => { onPlay(tracks, contextTrack.idx); setContextTrack(null) }}
+          onPlay={() => { onPlayAll(tracks, contextTrack.idx); setContextTrack(null) }}
           onPlayNext={() => { onPlayNext(contextTrack.track); setContextTrack(null) }}
           onAddToPlaylist={() => { setAddingTrackId(contextTrack.track.id!); setContextTrack(null) }}
           onRemove={async () => { await removeFromPlaylist(contextTrack.ptId); setContextTrack(null) }}
