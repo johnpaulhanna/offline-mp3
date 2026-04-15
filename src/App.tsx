@@ -25,6 +25,13 @@ export default function App() {
     },
   })
 
+  // When a new SW takes control (skipWaiting fires), reload to get fresh assets
+  useEffect(() => {
+    const handler = () => window.location.reload()
+    navigator.serviceWorker?.addEventListener('controllerchange', handler)
+    return () => navigator.serviceWorker?.removeEventListener('controllerchange', handler)
+  }, [])
+
   // Request persistent storage on first use
   useEffect(() => {
     if ('storage' in navigator && 'persist' in navigator.storage) {

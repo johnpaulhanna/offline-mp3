@@ -23,7 +23,9 @@ export default defineConfig({
         ],
       },
       workbox: {
-        cacheId: 'music-v3',
+        cacheId: 'music-v4',
+        skipWaiting: true,
+        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [],
       },
