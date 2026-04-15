@@ -75,13 +75,13 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
           <div className="flex gap-3 px-4 py-3 border-b border-white/5 shrink-0">
             <button
               onClick={() => onPlay(tracks, 0)}
-              className="flex-1 flex items-center justify-center gap-2 bg-white text-black text-sm font-semibold py-2.5 rounded-xl active:scale-95 transition-transform"
+              className="flex-1 flex items-center justify-center gap-2 bg-white text-black text-sm font-semibold py-2.5 rounded-2xl active:scale-95 transition-transform"
             >
               <PlayIcon size={16} /> Play All
             </button>
             <button
               onClick={() => onPlayShuffle(tracks)}
-              className="flex-1 flex items-center justify-center gap-2 bg-white/10 text-white text-sm font-semibold py-2.5 rounded-xl active:scale-95 transition-transform"
+              className="flex-1 flex items-center justify-center gap-2 bg-white/10 text-white text-sm font-semibold py-2.5 rounded-2xl active:scale-95 transition-transform"
             >
               <ShuffleIcon size={16} /> Shuffle
             </button>
@@ -107,9 +107,9 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
                   onPointerUp={cancelLongPress}
                   onPointerCancel={cancelLongPress}
                   onPointerMove={moveLongPress}
-                  className={`flex items-center gap-3 px-4 py-3 border-b border-white/5 active:bg-white/5 cursor-pointer select-none ${isActive ? 'bg-white/5' : ''}`}
+                  className={`flex items-center gap-3 mx-3 mb-1.5 px-3 py-3 rounded-2xl cursor-pointer select-none transition-colors ${isActive ? 'bg-white/10' : 'bg-white/[0.05] active:bg-white/10'}`}
                 >
-                  <CoverArt blob={track.coverBlob} size={48} className="rounded-lg" />
+                  <CoverArt blob={track.coverBlob} size={48} className="rounded-xl" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-white truncate leading-snug">
                       {isActive && playing && (
@@ -124,7 +124,7 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
               )
             })
           )}
-          <div className="h-2" />
+          <div className="h-28" />
         </div>
       </div>
 

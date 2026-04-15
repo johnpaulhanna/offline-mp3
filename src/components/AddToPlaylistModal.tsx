@@ -63,12 +63,12 @@ export function AddToPlaylistModal({ trackId, onClose }: Props) {
             onChange={e => setNewName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleCreate()}
             placeholder="New playlist name…"
-            className="flex-1 bg-gray-800 text-white placeholder-gray-500 text-sm px-3 py-2 rounded-lg outline-none focus:bg-gray-700"
+            className="flex-1 bg-gray-800 text-white placeholder-gray-500 text-sm px-3 py-2 rounded-2xl outline-none focus:bg-gray-700"
           />
           <button
             onClick={handleCreate}
             disabled={!newName.trim() || creating}
-            className="bg-white text-black text-sm font-semibold px-3 py-2 rounded-lg disabled:opacity-30 active:scale-95 transition-transform flex items-center gap-1"
+            className="bg-white text-black text-sm font-semibold px-3 py-2 rounded-2xl disabled:opacity-30 active:scale-95 transition-transform flex items-center gap-1"
           >
             <PlusIcon size={14} />
             Create

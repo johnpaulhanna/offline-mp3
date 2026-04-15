@@ -91,7 +91,7 @@ export function Library({ onPlay, onPlayNext, currentTrackId, playing }: Props) 
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search songs, artists, albums…"
-            className="w-full bg-gray-800 text-white placeholder-gray-500 text-sm px-4 py-2.5 rounded-xl outline-none"
+            className="w-full bg-white/[0.08] text-white placeholder-gray-500 text-sm px-4 py-2.5 rounded-2xl outline-none focus:bg-white/12"
           />
         </div>
 
@@ -125,11 +125,11 @@ export function Library({ onPlay, onPlayNext, currentTrackId, playing }: Props) 
                   onPointerUp={cancelLongPress}
                   onPointerCancel={cancelLongPress}
                   onPointerMove={moveLongPress}
-                  className={`flex items-center gap-3 px-4 py-3 border-b border-white/5 active:bg-white/5 cursor-pointer select-none ${
-                    isActive ? 'bg-white/5' : ''
+                  className={`flex items-center gap-3 mx-3 mb-1.5 px-3 py-3 rounded-2xl cursor-pointer select-none transition-colors ${
+                    isActive ? 'bg-white/10' : 'bg-white/[0.05] active:bg-white/10'
                   }`}
                 >
-                  <CoverArt blob={track.coverBlob} size={48} className="rounded-lg" />
+                  <CoverArt blob={track.coverBlob} size={48} className="rounded-xl" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-white truncate leading-snug">
                       {isActive && playing && (
@@ -151,7 +151,7 @@ export function Library({ onPlay, onPlayNext, currentTrackId, playing }: Props) 
               )
             })
           )}
-          <div className="h-2" />
+          <div className="h-28" />
         </div>
       </div>
 

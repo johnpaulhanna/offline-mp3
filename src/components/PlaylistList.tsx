@@ -32,19 +32,19 @@ export function PlaylistList({ onSelect }: Props) {
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* New playlist input */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5 shrink-0">
+      <div className="flex items-center gap-2 px-4 py-3 shrink-0">
         <input
           type="text"
           value={newName}
           onChange={e => setNewName(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleCreate()}
           placeholder="New playlist name…"
-          className="flex-1 bg-gray-800 text-white placeholder-gray-500 text-sm px-3 py-2 rounded-lg outline-none focus:bg-gray-700"
+          className="flex-1 bg-gray-800 text-white placeholder-gray-500 text-sm px-4 py-2.5 rounded-2xl outline-none focus:bg-gray-700"
         />
         <button
           onClick={handleCreate}
           disabled={!newName.trim() || creating}
-          className="bg-white text-black text-sm font-semibold px-3 py-2 rounded-lg disabled:opacity-30 active:scale-95 transition-transform flex items-center gap-1"
+          className="bg-white text-black text-sm font-semibold px-4 py-2.5 rounded-2xl disabled:opacity-30 active:scale-95 transition-transform flex items-center gap-1.5"
         >
           <PlusIcon size={14} />
           Create
@@ -55,7 +55,7 @@ export function PlaylistList({ onSelect }: Props) {
       <div className="overflow-y-auto flex-1">
         {playlists.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 px-8 text-center">
-            <div className="w-20 h-20 rounded-2xl bg-white/5 flex items-center justify-center">
+            <div className="w-20 h-20 rounded-3xl bg-white/5 flex items-center justify-center">
               <PlaylistIcon size={36} className="text-white/30" />
             </div>
             <div>
@@ -68,9 +68,9 @@ export function PlaylistList({ onSelect }: Props) {
             <div
               key={pl.id}
               onClick={() => onSelect(pl)}
-              className="flex items-center gap-3 px-4 py-4 border-b border-white/5 active:bg-white/5 cursor-pointer"
+              className="flex items-center gap-3 mx-3 mb-1.5 px-4 py-3.5 rounded-2xl bg-white/[0.05] active:bg-white/10 cursor-pointer"
             >
-              <div className="w-12 h-12 rounded-xl bg-white/8 flex items-center justify-center shrink-0">
+              <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center shrink-0">
                 <PlaylistIcon size={22} className="text-white/50" />
               </div>
               <p className="text-white font-semibold flex-1 truncate">{pl.name}</p>
@@ -84,7 +84,7 @@ export function PlaylistList({ onSelect }: Props) {
             </div>
           ))
         )}
-        <div className="h-2" />
+        <div className="h-28" />
       </div>
     </div>
   )
