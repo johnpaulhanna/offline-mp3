@@ -158,41 +158,54 @@ export function NowPlaying({
           <div
             ref={barRef}
             className="relative flex items-center touch-none cursor-pointer"
-            style={{ height: 36 }}
+            style={{ height: 44 }}
             onPointerDown={e => {
               e.stopPropagation()
               e.currentTarget.setPointerCapture(e.pointerId)
               dragging.current = true
-              const pct = pctFromPointer(e)
-              setDragPct(pct)
-              onSeek(pct * (duration || 1))
+              setDragPct(pctFromPointer(e))
             }}
             onPointerMove={e => {
               e.stopPropagation()
               if (!dragging.current) return
-              const pct = pctFromPointer(e)
-              setDragPct(pct)
-              onSeek(pct * (duration || 1))
+              setDragPct(pctFromPointer(e))
             }}
             onPointerUp={e => {
               e.stopPropagation()
               if (!dragging.current) return
-              dragging.current = false
               const pct = pctFromPointer(e)
+              dragging.current = false
               setDragPct(null)
               onSeek(pct * (duration || 1))
             }}
             onPointerCancel={() => { dragging.current = false; setDragPct(null) }}
           >
-            <div className="w-full h-1 bg-white/20 rounded-full relative">
-              <div className="absolute inset-y-0 left-0 bg-white rounded-full" style={{ width: `${displayPct}%` }} />
-            </div>
+            {/* Track */}
             <div
-              className="absolute w-4 h-4 bg-white rounded-full shadow-lg top-1/2 -translate-y-1/2 pointer-events-none"
-              style={{ left: `calc(${displayPct}% - 8px)` }}
+              className="w-full rounded-full relative overflow-hidden"
+              style={{
+                height: dragPct !== null ? 5 : 3,
+                background: 'rgba(255,255,255,0.2)',
+                transition: 'height 0.15s ease',
+              }}
+            >
+              <div
+                className="absolute inset-y-0 left-0 bg-white rounded-full"
+                style={{ width: `${displayPct}%` }}
+              />
+            </div>
+            {/* Thumb */}
+            <div
+              className="absolute bg-white rounded-full shadow-lg pointer-events-none top-1/2 -translate-y-1/2"
+              style={{
+                width: dragPct !== null ? 22 : 14,
+                height: dragPct !== null ? 22 : 14,
+                left: `calc(${displayPct}% - ${dragPct !== null ? 11 : 7}px)`,
+                transition: 'width 0.15s ease, height 0.15s ease, left 0s',
+              }}
             />
           </div>
-          <div className="flex justify-between text-xs text-white/40 mt-1">
+          <div className="flex justify-between text-xs text-white/40 -mt-1">
             <span>{formatTime(dragPct !== null ? dragPct * duration : position)}</span>
             <span>{formatTime(duration)}</span>
           </div>

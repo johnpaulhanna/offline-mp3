@@ -14,6 +14,7 @@ export interface Track {
 export interface Playlist {
   id?: number
   name: string
+  coverBlob?: Blob | null
   createdAt: number
 }
 

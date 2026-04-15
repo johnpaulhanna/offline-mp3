@@ -43,6 +43,10 @@ export async function removeFromPlaylist(playlistTrackId: number) {
   await db.playlistTracks.delete(playlistTrackId)
 }
 
+export async function updatePlaylistCover(id: number, blob: Blob | null) {
+  await db.playlists.update(id, { coverBlob: blob })
+}
+
 export async function getTrackPlaylistIds(trackId: number): Promise<number[]> {
   const pts = await db.playlistTracks.where('trackId').equals(trackId).toArray()
   return pts.map(pt => pt.playlistId)

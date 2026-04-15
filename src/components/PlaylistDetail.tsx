@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { usePlaylistTracks, removeFromPlaylist } from '../hooks/usePlaylists'
+import { useRef, useState, useEffect } from 'react'
+import { usePlaylistTracks, removeFromPlaylist, updatePlaylistCover } from '../hooks/usePlaylists'
 import type { Playlist, Track } from '../db'
 import { CoverArt } from './CoverArt'
 import { ChevronLeftIcon, PlayIcon, ShuffleIcon } from './Icons'
@@ -21,10 +21,33 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
   const tracks = data?.tracks ?? []
   const pts = data?.pts ?? []
 
+  // Local cover — updated immediately on pick so UI doesn't wait for DB round-trip
+  const [localCover, setLocalCover] = useState<Blob | null>(playlist.coverBlob ?? null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !playlist.id) return
+    const blob = new Blob([await file.arrayBuffer()], { type: file.type })
+    setLocalCover(blob)
+    await updatePlaylistCover(playlist.id, blob)
+    e.target.value = ''
+  }
+
+  // Blurred background — use custom cover, else first track's cover
+  const bgBlob = localCover ?? tracks[0]?.coverBlob ?? null
+  const [bgUrl, setBgUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (!bgBlob) { setBgUrl(null); return }
+    const url = URL.createObjectURL(bgBlob)
+    setBgUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [bgBlob])
+
   const [contextTrack, setContextTrack] = useState<{ track: Track; idx: number; ptId: number } | null>(null)
   const [addingTrackId, setAddingTrackId] = useState<number | null>(null)
 
-  // Long press state
+  // Long press
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpStart = useRef<{ x: number; y: number } | null>(null)
   const lpFired = useRef(false)
@@ -60,70 +83,132 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
 
   return (
     <>
-      <div className="flex flex-col flex-1 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5 shrink-0">
-          <button onClick={onBack} className="text-white w-9 h-9 flex items-center justify-center active:opacity-50">
-            <ChevronLeftIcon size={22} />
-          </button>
-          <p className="text-white font-bold text-base flex-1 truncate">{playlist.name}</p>
-          <span className="text-gray-500 text-xs">{tracks.length} track{tracks.length !== 1 ? 's' : ''}</span>
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleCoverChange}
+      />
+
+      <div className="flex flex-col flex-1 overflow-hidden relative">
+        {/* Blurred background */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          {bgUrl ? (
+            <>
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundImage: `url(${bgUrl})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  filter: 'blur(80px)',
+                  transform: 'scale(1.5)',
+                  opacity: 0.4,
+                }}
+              />
+              <div className="absolute inset-0 bg-gray-950/65" />
+            </>
+          ) : (
+            <div className="absolute inset-0 bg-gray-950" />
+          )}
         </div>
 
-        {/* Play / Shuffle */}
-        {tracks.length > 0 && (
-          <div className="flex gap-3 px-4 py-3 border-b border-white/5 shrink-0">
-            <button
-              onClick={() => onPlay(tracks, 0)}
-              className="flex-1 flex items-center justify-center gap-2 bg-white text-black text-sm font-semibold py-2.5 rounded-2xl active:scale-95 transition-transform"
-            >
-              <PlayIcon size={16} /> Play All
-            </button>
-            <button
-              onClick={() => onPlayShuffle(tracks)}
-              className="flex-1 flex items-center justify-center gap-2 bg-white/10 text-white text-sm font-semibold py-2.5 rounded-2xl active:scale-95 transition-transform"
-            >
-              <ShuffleIcon size={16} /> Shuffle
-            </button>
-          </div>
-        )}
+        {/* Back button */}
+        <div className="relative flex items-center gap-3 px-4 py-3 shrink-0">
+          <button
+            onClick={onBack}
+            className="text-white w-9 h-9 flex items-center justify-center active:opacity-50 bg-white/10 rounded-full"
+          >
+            <ChevronLeftIcon size={20} />
+          </button>
+          <p className="text-white/50 text-sm font-medium flex-1 truncate">Library</p>
+        </div>
 
-        {/* Track list */}
-        <div className="overflow-y-auto flex-1">
+        {/* Scrollable content */}
+        <div className="overflow-y-auto flex-1 relative">
+
+          {/* Hero */}
+          <div className="flex flex-col items-center px-8 pt-4 pb-6">
+            {/* Cover art — tap to change */}
+            <div
+              className="relative cursor-pointer active:opacity-80 transition-opacity"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <CoverArt
+                blob={localCover}
+                size={180}
+                className="rounded-2xl shadow-2xl"
+              />
+              {/* Edit badge */}
+              <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm border border-white/20 rounded-full px-2.5 py-1 flex items-center gap-1">
+                <span className="text-white text-[10px] font-semibold tracking-wide">EDIT</span>
+              </div>
+            </div>
+
+            <p className="text-white font-bold text-[22px] mt-4 text-center leading-tight">{playlist.name}</p>
+            <p className="text-gray-400 text-sm mt-1.5">
+              {tracks.length} {tracks.length === 1 ? 'song' : 'songs'}
+            </p>
+          </div>
+
+          {/* Play / Shuffle */}
+          {tracks.length > 0 && (
+            <div className="flex gap-3 px-5 pb-6">
+              <button
+                onClick={() => onPlay(tracks, 0)}
+                className="flex-1 flex items-center justify-center gap-2 bg-white text-black text-sm font-bold py-3 rounded-2xl active:scale-95 transition-transform"
+              >
+                <PlayIcon size={14} /> Play
+              </button>
+              <button
+                onClick={() => onPlayShuffle(tracks)}
+                className="flex-1 flex items-center justify-center gap-2 bg-white/[0.12] text-white text-sm font-bold py-3 rounded-2xl active:scale-95 transition-transform border border-white/10"
+              >
+                <ShuffleIcon size={14} /> Shuffle
+              </button>
+            </div>
+          )}
+
+          {/* Track list */}
           {tracks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3 px-8 text-center">
+            <div className="flex flex-col items-center justify-center py-16 gap-3 px-8 text-center">
               <p className="text-white font-semibold">Empty playlist</p>
-              <p className="text-gray-500 text-sm">Go to Songs, hold a track, and tap Add to Playlist.</p>
+              <p className="text-gray-500 text-sm">Hold a song and tap "Add to Playlist".</p>
             </div>
           ) : (
-            tracks.map((track, idx) => {
-              const isActive = track.id === currentTrackId
-              const pt = pts[idx]
-              return (
-                <div
-                  key={pt?.id ?? idx}
-                  onClick={() => { if (!lpFired.current) onPlay(tracks, idx) }}
-                  onPointerDown={e => startLongPress(e, track, idx, pt?.id ?? 0)}
-                  onPointerUp={cancelLongPress}
-                  onPointerCancel={cancelLongPress}
-                  onPointerMove={moveLongPress}
-                  className={`flex items-center gap-3 mx-3 mb-1.5 px-3 py-3 rounded-2xl cursor-pointer select-none transition-colors ${isActive ? 'bg-white/10' : 'bg-white/[0.05] active:bg-white/10'}`}
-                >
-                  <CoverArt blob={track.coverBlob} size={48} className="rounded-xl" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white truncate leading-snug">
-                      {isActive && playing && (
-                        <span className="inline-block w-2 h-2 rounded-full bg-green-400 mr-1.5 mb-0.5 animate-pulse" />
-                      )}
-                      {track.title}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate mt-0.5">{track.artist}</p>
+            <div className="mx-4 rounded-2xl overflow-hidden bg-white/[0.05]">
+              {tracks.map((track, idx) => {
+                const isActive = track.id === currentTrackId
+                const pt = pts[idx]
+                return (
+                  <div
+                    key={pt?.id ?? idx}
+                    onClick={() => { if (!lpFired.current) onPlay(tracks, idx) }}
+                    onPointerDown={e => startLongPress(e, track, idx, pt?.id ?? 0)}
+                    onPointerUp={cancelLongPress}
+                    onPointerCancel={cancelLongPress}
+                    onPointerMove={moveLongPress}
+                    className={`flex items-center gap-3 px-4 py-3 cursor-pointer select-none border-b border-white/[0.05] last:border-0 transition-colors ${isActive ? 'bg-white/[0.08]' : 'active:bg-white/[0.08]'}`}
+                  >
+                    <CoverArt blob={track.coverBlob} size={44} className="rounded-xl" />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-semibold truncate leading-snug ${isActive ? 'text-green-400' : 'text-white'}`}>
+                        {isActive && playing && (
+                          <span className="inline-block w-2 h-2 rounded-full bg-green-400 mr-1.5 mb-0.5 animate-pulse" />
+                        )}
+                        {track.title}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate mt-0.5">{track.artist}</p>
+                    </div>
+                    <span className="text-xs text-gray-600 shrink-0 tabular-nums">{formatDuration(track.duration)}</span>
                   </div>
-                  <span className="text-xs text-gray-600 shrink-0 tabular-nums">{formatDuration(track.duration)}</span>
-                </div>
-              )
-            })
+                )
+              })}
+            </div>
           )}
+
           <div className="h-28" />
         </div>
       </div>
