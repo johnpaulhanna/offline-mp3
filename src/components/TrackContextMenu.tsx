@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import type { Track } from '../db'
 import { CoverArt } from './CoverArt'
 
@@ -17,14 +18,37 @@ export function TrackContextMenu({
   track, onClose, onPlay, onPlayNext, onAddToQueue,
   onAddToPlaylist, onToggleLike, onDelete, onRemove,
 }: Props) {
-  const action = (fn: () => void) => () => { fn(); onClose() }
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setVisible(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
+
+  const close = () => {
+    setVisible(false)
+    setTimeout(onClose, 280)
+  }
+
+  const action = (fn: () => void) => () => { fn(); close() }
   const isLiked = !!track.liked
 
   return (
     <div className="fixed inset-0 z-50 flex items-end">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity duration-280"
+        style={{ opacity: visible ? 1 : 0 }}
+        onClick={close}
+      />
 
-      <div className="relative w-full" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <div
+        className="relative w-full transition-transform duration-280"
+        style={{
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          transform: visible ? 'translateY(0)' : 'translateY(100%)',
+          transitionTimingFunction: 'cubic-bezier(0.32,0.72,0,1)',
+        }}
+      >
         {/* Track identity card */}
         <div className="mx-3 mb-2 bg-gray-900 rounded-2xl overflow-hidden">
           <div className="flex items-center gap-3 px-4 py-4 border-b border-white/8">
@@ -78,8 +102,8 @@ export function TrackContextMenu({
         </div>
 
         <button
-          onClick={onClose}
-          className="mx-3 w-[calc(100%-1.5rem)] bg-gray-900 rounded-2xl py-4 text-white font-semibold text-base active:bg-gray-800"
+          onClick={close}
+          className="mx-3 w-[calc(100%-1.5rem)] bg-gray-900 rounded-2xl py-4 text-white font-semibold text-base active:bg-gray-800 transition-colors"
         >
           Cancel
         </button>

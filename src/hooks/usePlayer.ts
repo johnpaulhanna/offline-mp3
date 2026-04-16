@@ -176,6 +176,39 @@ export function usePlayer() {
     })
   }, [loadTrack])
 
+  const jumpTo = useCallback((index: number) => {
+    setState(s => {
+      if (index < 0 || index >= s.queue.length) return s
+      const track = s.queue[index]
+      loadTrack(track, true)
+      return { ...s, queueIndex: index, currentTrack: track }
+    })
+  }, [loadTrack])
+
+  const reorderQueue = useCallback((fromIndex: number, toIndex: number) => {
+    setState(s => {
+      if (fromIndex === toIndex) return s
+      const newQueue = [...s.queue]
+      const [moved] = newQueue.splice(fromIndex, 1)
+      newQueue.splice(toIndex, 0, moved)
+      let qi = s.queueIndex
+      if (fromIndex === qi) qi = toIndex
+      else if (fromIndex < qi && toIndex >= qi) qi--
+      else if (fromIndex > qi && toIndex <= qi) qi++
+      return { ...s, queue: newQueue, queueIndex: qi }
+    })
+  }, [])
+
+  const removeFromQueue = useCallback((index: number) => {
+    setState(s => {
+      if (index === s.queueIndex) return s
+      const newQueue = [...s.queue]
+      newQueue.splice(index, 1)
+      const qi = index < s.queueIndex ? s.queueIndex - 1 : s.queueIndex
+      return { ...s, queue: newQueue, queueIndex: qi }
+    })
+  }, [])
+
   const cycleRepeat = useCallback(() => {
     setState(s => {
       const modes: RepeatMode[] = ['none', 'all', 'one']
@@ -222,5 +255,5 @@ export function usePlayer() {
     navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused'
   }, [state.playing])
 
-  return { state, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat }
+  return { state, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat, reorderQueue, removeFromQueue, jumpTo }
 }

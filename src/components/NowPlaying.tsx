@@ -4,14 +4,16 @@ import type { PlayerState } from '../hooks/usePlayer'
 import { toggleLike } from '../hooks/useTracks'
 import { db } from '../db'
 import { CoverArt } from './CoverArt'
+import { QueueView } from './QueueView'
 import {
   PlayIcon, PauseIcon, NextIcon, PrevIcon,
   ShuffleIcon, RepeatIcon, RepeatOneIcon, ChevronDownIcon,
-  HeartIcon, HeartFilledIcon,
+  HeartIcon, HeartFilledIcon, QueueIcon,
 } from './Icons'
 
 interface Props {
   state: PlayerState
+  visible: boolean
   onTogglePlay: () => void
   onNext: () => void
   onPrev: () => void
@@ -19,6 +21,9 @@ interface Props {
   onToggleShuffle: () => void
   onCycleRepeat: () => void
   onClose: () => void
+  onJumpTo: (index: number) => void
+  onRemoveFromQueue: (index: number) => void
+  onReorderQueue: (from: number, to: number) => void
 }
 
 function formatTime(s: number) {
@@ -29,8 +34,9 @@ function formatTime(s: number) {
 }
 
 export function NowPlaying({
-  state, onTogglePlay, onNext, onPrev, onSeek,
+  state, visible, onTogglePlay, onNext, onPrev, onSeek,
   onToggleShuffle, onCycleRepeat, onClose,
+  onJumpTo, onRemoveFromQueue, onReorderQueue,
 }: Props) {
   const { currentTrack, playing, position, duration, shuffle, repeat } = state
 
@@ -65,7 +71,6 @@ export function NowPlaying({
   const [swipeY, setSwipeY] = useState(0)
 
   const onSwipeDown = (e: React.PointerEvent) => {
-    // Only allow swipe from upper portion (cover art area), not controls
     if (e.clientY > window.innerHeight * 0.65) return
     swipeStartY.current = e.clientY
     swipeAllowed.current = true
@@ -87,7 +92,7 @@ export function NowPlaying({
     swipeAllowed.current = false
   }
 
-  // Reactive liked state — stays in sync even if toggled from Library
+  // Reactive liked state
   const liked = useLiveQuery(
     () => currentTrack?.id != null
       ? db.tracks.get(currentTrack.id).then(t => !!t?.liked)
@@ -96,7 +101,26 @@ export function NowPlaying({
     false
   ) ?? false
 
+  // Heart pop animation — fire when liked becomes true
+  const prevLiked = useRef(liked)
+  const [heartKey, setHeartKey] = useState(0)
+  useEffect(() => {
+    if (liked && !prevLiked.current) setHeartKey(k => k + 1)
+    prevLiked.current = liked
+  }, [liked])
+
+  // Queue sheet
+  const [showQueue, setShowQueue] = useState(false)
+
   if (!currentTrack) return null
+
+  // NowPlaying slide-up/down transition
+  const transform = !visible
+    ? 'translateY(100%)'
+    : swipeY > 0
+      ? `translateY(${swipeY}px)`
+      : 'translateY(0)'
+  const transition = swipeY > 0 ? 'none' : 'transform 0.42s cubic-bezier(0.32,0.72,0,1)'
 
   return (
     <div
@@ -104,8 +128,8 @@ export function NowPlaying({
       style={{
         paddingTop: 'env(safe-area-inset-top)',
         paddingBottom: 'env(safe-area-inset-bottom)',
-        transform: swipeY > 0 ? `translateY(${swipeY}px)` : undefined,
-        transition: swipeY > 0 ? 'none' : 'transform 0.3s cubic-bezier(0.32,0.72,0,1)',
+        transform,
+        transition,
       }}
       onPointerDown={onSwipeDown}
       onPointerMove={onSwipeMove}
@@ -143,13 +167,19 @@ export function NowPlaying({
         <div className="flex items-center justify-between px-5 py-2">
           <button
             onClick={onClose}
-            className="text-white w-9 h-9 flex items-center justify-center active:opacity-50 rounded-full bg-white/10"
+            className="text-white w-9 h-9 flex items-center justify-center active:opacity-50 rounded-full bg-white/10 transition-opacity"
             aria-label="Close"
           >
             <ChevronDownIcon size={20} />
           </button>
           <p className="text-xs font-semibold text-white/60 uppercase tracking-widest">Now Playing</p>
-          <div className="w-9" />
+          <button
+            onClick={() => setShowQueue(q => !q)}
+            className={`w-9 h-9 flex items-center justify-center rounded-full transition-all active:opacity-50 ${showQueue ? 'bg-white/20 text-white' : 'bg-white/10 text-white/70'}`}
+            aria-label="Queue"
+          >
+            <QueueIcon size={20} />
+          </button>
         </div>
 
         {/* Cover art */}
@@ -173,7 +203,7 @@ export function NowPlaying({
             aria-label={liked ? 'Unlike' : 'Like'}
           >
             {liked
-              ? <HeartFilledIcon size={24} className="text-pink-400" />
+              ? <HeartFilledIcon key={heartKey} size={24} className="text-pink-400 animate-heart-pop" />
               : <HeartIcon size={24} className="text-white/40" />
             }
           </button>
@@ -240,12 +270,12 @@ export function NowPlaying({
         <div className="flex items-center justify-between px-8 pb-4 pt-2">
           <button
             onClick={onToggleShuffle}
-            className={`w-10 h-10 flex items-center justify-center active:opacity-50 transition-colors ${shuffle ? 'text-white' : 'text-white/30'}`}
+            className={`w-10 h-10 flex items-center justify-center transition-colors active:opacity-50 ${shuffle ? 'text-white' : 'text-white/30'}`}
           >
             <ShuffleIcon size={22} />
           </button>
 
-          <button onClick={onPrev} className="w-12 h-12 flex items-center justify-center text-white active:opacity-50">
+          <button onClick={onPrev} className="w-12 h-12 flex items-center justify-center text-white active:opacity-50 transition-opacity">
             <PrevIcon size={32} />
           </button>
 
@@ -256,18 +286,30 @@ export function NowPlaying({
             {playing ? <PauseIcon size={28} /> : <PlayIcon size={28} />}
           </button>
 
-          <button onClick={onNext} className="w-12 h-12 flex items-center justify-center text-white active:opacity-50">
+          <button onClick={onNext} className="w-12 h-12 flex items-center justify-center text-white active:opacity-50 transition-opacity">
             <NextIcon size={32} />
           </button>
 
           <button
             onClick={onCycleRepeat}
-            className={`w-10 h-10 flex items-center justify-center active:opacity-50 transition-colors ${repeat !== 'none' ? 'text-white' : 'text-white/30'}`}
+            className={`w-10 h-10 flex items-center justify-center transition-colors active:opacity-50 ${repeat !== 'none' ? 'text-white' : 'text-white/30'}`}
           >
             {repeat === 'one' ? <RepeatOneIcon size={22} /> : <RepeatIcon size={22} />}
           </button>
         </div>
       </div>
+
+      {/* Queue sheet — overlays NowPlaying content */}
+      {showQueue && (
+        <QueueView
+          queue={state.queue}
+          queueIndex={state.queueIndex}
+          onClose={() => setShowQueue(false)}
+          onJumpTo={idx => { onJumpTo(idx); setShowQueue(false) }}
+          onRemove={onRemoveFromQueue}
+          onReorder={onReorderQueue}
+        />
+      )}
     </div>
   )
 }

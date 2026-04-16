@@ -12,7 +12,7 @@ import { PlaylistDetail } from './components/PlaylistDetail'
 import type { Track, Playlist } from './db'
 
 export default function App() {
-  const { state, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat } = usePlayer()
+  const { state, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat, reorderQueue, removeFromQueue, jumpTo } = usePlayer()
   const [showNowPlaying, setShowNowPlaying] = useState(false)
   const [tab, setTab] = useState<Tab>('songs')
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null)
@@ -130,10 +130,11 @@ export default function App() {
       {/* Tab bar */}
       <TabBar active={tab} onChange={handleTabChange} />
 
-      {/* Now Playing overlay */}
-      {showNowPlaying && state.currentTrack && (
+      {/* Now Playing overlay — always mounted when a track exists so slide animation works */}
+      {state.currentTrack && (
         <NowPlaying
           state={state}
+          visible={showNowPlaying}
           onTogglePlay={togglePlay}
           onNext={next}
           onPrev={prev}
@@ -141,6 +142,9 @@ export default function App() {
           onToggleShuffle={toggleShuffle}
           onCycleRepeat={cycleRepeat}
           onClose={() => setShowNowPlaying(false)}
+          onJumpTo={jumpTo}
+          onRemoveFromQueue={removeFromQueue}
+          onReorderQueue={reorderQueue}
         />
       )}
     </div>
