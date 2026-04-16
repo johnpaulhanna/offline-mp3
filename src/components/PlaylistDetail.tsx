@@ -232,7 +232,7 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
           onAddToQueue={() => { onAddToQueue(contextTrack.track); setContextTrack(null) }}
           onAddToPlaylist={() => { setAddingTrackId(contextTrack.track.id!); setContextTrack(null) }}
           onToggleLike={async () => {
-            await toggleLike(contextTrack.track.id!, !contextTrack.track.liked)
+            await toggleLike(contextTrack.track.id!)
             setContextTrack(null)
           }}
           onRemove={async () => { await removeFromPlaylist(contextTrack.ptId); setContextTrack(null) }}

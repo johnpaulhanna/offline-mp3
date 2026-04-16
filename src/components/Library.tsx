@@ -188,7 +188,7 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
           onAddToQueue={() => { onAddToQueue(contextTrack.track); setContextTrack(null) }}
           onAddToPlaylist={() => { setAddingTrackId(contextTrack.track.id!); setContextTrack(null) }}
           onToggleLike={async () => {
-            await toggleLike(contextTrack.track.id!, !contextTrack.track.liked)
+            await toggleLike(contextTrack.track.id!)
             setContextTrack(null)
           }}
           onDelete={async () => { await deleteTrack(contextTrack.track.id!); setContextTrack(null) }}

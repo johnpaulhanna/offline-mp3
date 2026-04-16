@@ -15,6 +15,9 @@ export async function deleteTrack(id: number) {
   await db.tracks.delete(id)
 }
 
-export async function toggleLike(id: number, liked: boolean) {
-  await db.tracks.update(id, { liked })
+export async function toggleLike(id: number) {
+  const track = await db.tracks.get(id)
+  if (!track) return
+  // Store true when liking, remove the field when unliking (undefined = not liked)
+  await db.tracks.update(id, { liked: track.liked ? undefined : true })
 }

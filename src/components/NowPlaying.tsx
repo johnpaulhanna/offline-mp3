@@ -168,7 +168,7 @@ export function NowPlaying({
             <p className="text-white/60 text-sm truncate mt-0.5">{currentTrack.artist}</p>
           </div>
           <button
-            onClick={() => currentTrack.id != null && toggleLike(currentTrack.id, !liked)}
+            onClick={() => currentTrack.id != null && toggleLike(currentTrack.id)}
             className="w-10 h-10 flex items-center justify-center shrink-0 active:scale-90 transition-transform"
             aria-label={liked ? 'Unlike' : 'Like'}
           >
