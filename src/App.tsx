@@ -5,7 +5,6 @@ import { Library } from './components/Library'
 import { NowPlaying } from './components/NowPlaying'
 import { MiniPlayer } from './components/MiniPlayer'
 import { ImportButton } from './components/ImportButton'
-import { StorageInfo } from './components/StorageInfo'
 import { TabBar, type Tab } from './components/TabBar'
 import { PlaylistList } from './components/PlaylistList'
 import { PlaylistDetail } from './components/PlaylistDetail'
@@ -77,18 +76,15 @@ export default function App() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-white/8 shrink-0">
+      <div className="flex items-center justify-between px-5 py-3 shrink-0">
         <h1 className="text-xl font-bold tracking-tight">
           {tab === 'playlists' && selectedPlaylist ? selectedPlaylist.name : 'Music'}
         </h1>
         {tab === 'songs' && <ImportButton />}
       </div>
 
-      {/* Main content — key triggers fade-in when view changes */}
-      <div
-        key={`${tab}-${selectedPlaylist?.id ?? 'none'}`}
-        className="flex-1 flex flex-col overflow-hidden animate-fade-in"
-      >
+      {/* Main content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
         {tab === 'songs' && (
           <Library
             onPlay={handlePlay}
@@ -116,9 +112,6 @@ export default function App() {
           />
         )}
       </div>
-
-      {/* Storage info */}
-      <StorageInfo />
 
       {/* Mini player */}
       {state.currentTrack && !showNowPlaying && (

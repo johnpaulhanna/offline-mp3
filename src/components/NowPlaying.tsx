@@ -53,6 +53,7 @@ export function NowPlaying({
   const barRef = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
   const [dragPct, setDragPct] = useState<number | null>(null)
+  const [pendingSeekPct, setPendingSeekPct] = useState<number | null>(null)
 
   const pctFromPointer = (e: React.PointerEvent) => {
     if (!barRef.current) return 0
@@ -60,10 +61,20 @@ export function NowPlaying({
     return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
   }
 
+  // Clear pendingSeekPct once audio position catches up to the seek target
+  useEffect(() => {
+    if (pendingSeekPct === null || duration <= 0) return
+    if (Math.abs(position / duration - pendingSeekPct) < 0.02) {
+      setPendingSeekPct(null)
+    }
+  }, [position, pendingSeekPct, duration])
+
   const isDragging = dragPct !== null
   const displayPct = isDragging
     ? dragPct! * 100
-    : (duration > 0 ? (position / duration) * 100 : 0)
+    : pendingSeekPct !== null
+      ? pendingSeekPct * 100
+      : (duration > 0 ? (position / duration) * 100 : 0)
 
   // Swipe down to dismiss
   const swipeStartY = useRef<number | null>(null)
@@ -233,9 +244,10 @@ export function NowPlaying({
               const pct = pctFromPointer(e)
               dragging.current = false
               setDragPct(null)
+              setPendingSeekPct(pct)
               onSeek(pct * (duration || 1))
             }}
-            onPointerCancel={() => { dragging.current = false; setDragPct(null) }}
+            onPointerCancel={() => { dragging.current = false; setDragPct(null); setPendingSeekPct(null) }}
           >
             {/* Track */}
             <div
@@ -262,7 +274,7 @@ export function NowPlaying({
             />
           </div>
           <div className="flex justify-between text-xs text-white/40 -mt-1">
-            <span>{formatTime(isDragging ? dragPct! * duration : position)}</span>
+            <span>{formatTime(isDragging ? dragPct! * duration : pendingSeekPct !== null ? pendingSeekPct * duration : position)}</span>
             <span>{formatTime(duration)}</span>
           </div>
         </div>

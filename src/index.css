@@ -31,11 +31,20 @@ html, body, #root {
   overscroll-behavior: none;
   margin: 0;
   padding: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 * {
   -webkit-tap-highlight-color: transparent;
   box-sizing: border-box;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+input, textarea {
+  user-select: text;
+  touch-action: auto;
 }
 
 input[type="range"] {
