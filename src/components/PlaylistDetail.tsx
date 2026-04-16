@@ -136,7 +136,7 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
         </div>
 
         {/* Scrollable content */}
-        <div className="overflow-y-auto flex-1 relative">
+        <div className="overflow-y-auto flex-1 relative" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
 
           {/* Hero */}
           <div className="flex flex-col items-center px-8 pt-4 pb-6">

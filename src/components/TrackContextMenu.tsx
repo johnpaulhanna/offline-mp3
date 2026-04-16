@@ -36,17 +36,17 @@ export function TrackContextMenu({
   return (
     <div className="fixed inset-0 z-50 flex items-end">
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity duration-280"
-        style={{ opacity: visible ? 1 : 0 }}
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        style={{ opacity: visible ? 1 : 0, transition: 'opacity 260ms ease' }}
         onClick={close}
       />
 
       <div
-        className="relative w-full transition-transform duration-280"
+        className="relative w-full"
         style={{
           paddingBottom: 'env(safe-area-inset-bottom)',
           transform: visible ? 'translateY(0)' : 'translateY(100%)',
-          transitionTimingFunction: 'cubic-bezier(0.32,0.72,0,1)',
+          transition: 'transform 300ms cubic-bezier(0.32,0.72,0,1)',
         }}
       >
         {/* Track identity card */}

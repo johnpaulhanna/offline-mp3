@@ -20,7 +20,7 @@ export function MiniPlayer({ state, onTogglePlay, onNext, onExpand }: Props) {
       <div className="bg-gray-900 rounded-3xl overflow-hidden shadow-2xl shadow-black/60">
         {/* Thin progress bar */}
         <div className="h-[3px] bg-white/10">
-          <div className="h-full bg-white/50 transition-all duration-500" style={{ width: `${pct}%` }} />
+          <div className="h-full bg-white/50 transition-[width] duration-75 ease-linear" style={{ width: `${pct}%` }} />
         </div>
 
         <div className="flex items-center gap-3 px-4 py-3">

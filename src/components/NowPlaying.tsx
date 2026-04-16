@@ -186,8 +186,9 @@ export function NowPlaying({
         <div className="flex-1 flex items-center justify-center px-8 py-2">
           <CoverArt
             blob={currentTrack.coverBlob}
-            size={Math.min(320, window.innerWidth - 64)}
-            className="rounded-2xl shadow-2xl"
+            fluid
+            className="rounded-2xl shadow-2xl w-full"
+            style={{ maxWidth: 320 }}
           />
         </div>
 

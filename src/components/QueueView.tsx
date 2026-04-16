@@ -26,9 +26,9 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
   const nextUp = queue.slice(queueIndex + 1)
 
   const [drag, setDrag] = useState<DragState | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  // Prevents click from firing as a jump right after a drag ends
+  const didDrag = useRef(false)
 
-  // How many rows the dragged item has shifted (clamped to list bounds)
   const dragDelta = drag
     ? Math.max(-drag.fromLocal, Math.min(nextUp.length - 1 - drag.fromLocal, Math.round(drag.dy / ROW_H)))
     : 0
@@ -37,13 +37,16 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
   const startDrag = (e: React.PointerEvent, localIdx: number) => {
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
+    didDrag.current = false
     setDrag({ fromLocal: localIdx, fromQueue: queueIndex + 1 + localIdx, startY: e.clientY, dy: 0 })
   }
 
   const moveDrag = (e: React.PointerEvent) => {
     if (!drag) return
     e.stopPropagation()
-    setDrag(d => d ? { ...d, dy: e.clientY - d.startY } : null)
+    const dy = e.clientY - drag.startY
+    if (Math.abs(dy) > 4) didDrag.current = true
+    setDrag(d => d ? { ...d, dy } : null)
   }
 
   const endDrag = (e: React.PointerEvent) => {
@@ -54,11 +57,9 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
     setDrag(null)
   }
 
-  // Compute the display transform for each "next up" row
   const rowTransform = (localIdx: number): string => {
     if (!drag) return 'translateY(0)'
     if (localIdx === drag.fromLocal) return `translateY(${drag.dy}px)`
-    // Shift other rows to make room
     if (dragDelta > 0 && localIdx > drag.fromLocal && localIdx <= toLocal)
       return `translateY(-${ROW_H}px)`
     if (dragDelta < 0 && localIdx < drag.fromLocal && localIdx >= toLocal)
@@ -75,8 +76,10 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
       onPointerCancel={() => setDrag(null)}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-5 pt-4 pb-3 shrink-0"
-        style={{ paddingTop: 'calc(env(safe-area-inset-top) + 1rem)' }}>
+      <div
+        className="flex items-center justify-between px-5 pb-3 shrink-0"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top) + 1rem)' }}
+      >
         <p className="text-white font-bold text-lg tracking-tight">Queue</p>
         <button
           onClick={onClose}
@@ -87,7 +90,7 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
         </button>
       </div>
 
-      <div className="overflow-y-auto flex-1" ref={containerRef}>
+      <div className="overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
         {/* Now Playing */}
         {current && (
           <div className="px-4 pb-2">
@@ -116,8 +119,8 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
               return (
                 <div
                   key={`${qIdx}-${track.id}`}
-                  className={`absolute left-0 right-0 flex items-center gap-3 px-3 py-3 rounded-2xl cursor-pointer select-none transition-colors ${
-                    isDraggingThis ? 'bg-white/15 z-10' : 'bg-white/[0.04] active:bg-white/[0.08]'
+                  className={`absolute left-0 right-0 flex items-center gap-3 px-3 py-3 rounded-2xl select-none ${
+                    isDraggingThis ? 'bg-white/15' : 'bg-white/[0.04]'
                   }`}
                   style={{
                     top: localIdx * ROW_H,
@@ -126,7 +129,10 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
                     transition: isDraggingThis ? 'none' : 'transform 0.18s ease',
                     zIndex: isDraggingThis ? 10 : 1,
                   }}
-                  onClick={() => { if (!drag) onJumpTo(qIdx) }}
+                  onClick={() => {
+                    if (didDrag.current) { didDrag.current = false; return }
+                    onJumpTo(qIdx)
+                  }}
                 >
                   <CoverArt blob={track.coverBlob} size={44} className="rounded-xl shrink-0" />
                   <div className="flex-1 min-w-0">
@@ -134,12 +140,8 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
                     <p className="text-white/50 text-xs truncate mt-0.5">{track.artist}</p>
                   </div>
                   <button
-                    onPointerDown={e => {
-                      e.stopPropagation()
-                      onRemove(qIdx)
-                    }}
-                    onClick={e => e.stopPropagation()}
-                    className="w-7 h-7 flex items-center justify-center text-white/30 active:text-white/70 shrink-0"
+                    onClick={e => { e.stopPropagation(); onRemove(qIdx) }}
+                    className="w-7 h-7 flex items-center justify-center text-white/30 active:text-white/70 transition-colors shrink-0"
                     aria-label="Remove from queue"
                   >
                     <XIcon size={16} />
@@ -147,7 +149,7 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
                   <div
                     onPointerDown={e => startDrag(e, localIdx)}
                     onClick={e => e.stopPropagation()}
-                    className="w-8 h-8 flex items-center justify-center text-white/25 active:text-white/60 cursor-grab active:cursor-grabbing shrink-0 touch-none"
+                    className="w-8 h-8 flex items-center justify-center text-white/25 active:text-white/60 cursor-grab shrink-0 touch-none"
                     aria-label="Drag to reorder"
                   >
                     <DragHandleIcon size={20} />

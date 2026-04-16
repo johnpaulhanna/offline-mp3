@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePlaylists, createPlaylist, addTrackToPlaylist } from '../hooks/usePlaylists'
 import { XIcon, PlusIcon } from './Icons'
 
@@ -12,6 +12,17 @@ export function AddToPlaylistModal({ trackId, onClose }: Props) {
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
   const [added, setAdded] = useState<number[]>([])
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setVisible(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
+
+  const close = () => {
+    setVisible(false)
+    setTimeout(onClose, 300)
+  }
 
   const handleAdd = async (playlistId: number) => {
     await addTrackToPlaylist(playlistId, trackId)
@@ -34,13 +45,19 @@ export function AddToPlaylistModal({ trackId, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        style={{ opacity: visible ? 1 : 0, transition: 'opacity 260ms ease' }}
+        onClick={close}
+      />
 
-      {/* Sheet */}
       <div
         className="relative w-full bg-gray-950 rounded-t-2xl"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        style={{
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          transform: visible ? 'translateY(0)' : 'translateY(100%)',
+          transition: 'transform 300ms cubic-bezier(0.32,0.72,0,1)',
+        }}
       >
         {/* Handle */}
         <div className="flex justify-center pt-3 pb-1">
@@ -50,7 +67,7 @@ export function AddToPlaylistModal({ trackId, onClose }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-white/8">
           <p className="text-white font-semibold">Add to Playlist</p>
-          <button onClick={onClose} className="text-white/40 w-7 h-7 flex items-center justify-center">
+          <button onClick={close} className="text-white/40 w-7 h-7 flex items-center justify-center active:text-white/70 transition-colors">
             <XIcon size={16} />
           </button>
         </div>
@@ -63,7 +80,7 @@ export function AddToPlaylistModal({ trackId, onClose }: Props) {
             onChange={e => setNewName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleCreate()}
             placeholder="New playlist name…"
-            className="flex-1 bg-gray-800 text-white placeholder-gray-500 text-sm px-3 py-2 rounded-2xl outline-none focus:bg-gray-700"
+            className="flex-1 bg-gray-800 text-white placeholder-gray-500 text-sm px-3 py-2 rounded-2xl outline-none focus:bg-gray-700 transition-colors"
           />
           <button
             onClick={handleCreate}
@@ -76,7 +93,7 @@ export function AddToPlaylistModal({ trackId, onClose }: Props) {
         </div>
 
         {/* Existing playlists */}
-        <div className="overflow-y-auto max-h-64">
+        <div className="overflow-y-auto max-h-64" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
           {playlists.length === 0 && (
             <p className="text-gray-600 text-sm text-center py-6">No playlists yet</p>
           )}
@@ -86,11 +103,11 @@ export function AddToPlaylistModal({ trackId, onClose }: Props) {
               <button
                 key={pl.id}
                 onClick={() => !isAdded && handleAdd(pl.id!)}
-                className="w-full flex items-center justify-between px-5 py-3.5 active:bg-white/5 text-left border-b border-white/5 last:border-0"
+                className="w-full flex items-center justify-between px-5 py-3.5 active:bg-white/5 text-left border-b border-white/5 last:border-0 transition-colors"
               >
                 <span className="text-white text-sm">{pl.name}</span>
                 {isAdded && (
-                  <span className="text-green-400 text-xs font-semibold">Added</span>
+                  <span className="text-green-400 text-xs font-semibold">Added ✓</span>
                 )}
               </button>
             )

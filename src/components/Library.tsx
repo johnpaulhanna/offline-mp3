@@ -129,7 +129,7 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
         </div>
 
         {/* Track list */}
-        <div className="overflow-y-auto flex-1">
+        <div className="overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
           {tracks.length === 0 ? (
             <p className="text-gray-500 text-sm text-center mt-12">
               {showLiked ? 'No liked songs yet' : `No results for "${search}"`}

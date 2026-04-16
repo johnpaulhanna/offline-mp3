@@ -80,7 +80,7 @@ export function PlaylistList({ onSelect }: Props) {
       )}
 
       {/* List */}
-      <div className="overflow-y-auto flex-1">
+      <div className="overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
         {playlists.length === 0 && !creating ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 px-8 text-center">
             <div className="w-20 h-20 rounded-3xl bg-white/5 flex items-center justify-center">

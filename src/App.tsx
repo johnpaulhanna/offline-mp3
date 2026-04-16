@@ -84,8 +84,11 @@ export default function App() {
         {tab === 'songs' && <ImportButton />}
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Main content — key triggers fade-in when view changes */}
+      <div
+        key={`${tab}-${selectedPlaylist?.id ?? 'none'}`}
+        className="flex-1 flex flex-col overflow-hidden animate-fade-in"
+      >
         {tab === 'songs' && (
           <Library
             onPlay={handlePlay}
