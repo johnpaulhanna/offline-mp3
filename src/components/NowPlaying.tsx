@@ -95,6 +95,7 @@ export function NowPlaying({
 
   const onSwipeEnd = () => {
     if (swipeY > 120) {
+      setSwipeY(0)
       onClose()
     } else {
       setSwipeY(0)

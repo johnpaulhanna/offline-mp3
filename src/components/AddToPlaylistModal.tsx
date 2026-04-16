@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { usePlaylists, createPlaylist, addTrackToPlaylist } from '../hooks/usePlaylists'
 import { XIcon, PlusIcon } from './Icons'
 
@@ -13,6 +13,7 @@ export function AddToPlaylistModal({ trackId, onClose }: Props) {
   const [creating, setCreating] = useState(false)
   const [added, setAdded] = useState<number[]>([])
   const [visible, setVisible] = useState(false)
+  const processingIds = useRef(new Set<number>())
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setVisible(true))
@@ -25,8 +26,14 @@ export function AddToPlaylistModal({ trackId, onClose }: Props) {
   }
 
   const handleAdd = async (playlistId: number) => {
-    await addTrackToPlaylist(playlistId, trackId)
-    setAdded(prev => [...prev, playlistId])
+    if (processingIds.current.has(playlistId)) return
+    processingIds.current.add(playlistId)
+    try {
+      await addTrackToPlaylist(playlistId, trackId)
+      setAdded(prev => [...prev, playlistId])
+    } finally {
+      processingIds.current.delete(playlistId)
+    }
   }
 
   const handleCreate = async () => {

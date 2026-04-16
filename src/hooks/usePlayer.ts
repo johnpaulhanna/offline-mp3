@@ -29,13 +29,26 @@ export function usePlayer() {
     repeat: 'none',
   })
 
+  // Track last-reported position to throttle timeupdate re-renders
+  const lastPositionRef = useRef(0)
+
   // Init audio element once
   useEffect(() => {
     const audio = new Audio()
     audio.preload = 'auto'
     audioRef.current = audio
 
-    const onTimeUpdate = () => setState(s => ({ ...s, position: audio.currentTime }))
+    let rafPending: number | null = null
+    const onTimeUpdate = () => {
+      if (rafPending !== null) return
+      rafPending = requestAnimationFrame(() => {
+        rafPending = null
+        const t = audio.currentTime
+        if (Math.abs(t - lastPositionRef.current) < 0.25) return
+        lastPositionRef.current = t
+        setState(s => ({ ...s, position: t }))
+      })
+    }
     const onDurationChange = () => setState(s => ({ ...s, duration: audio.duration || 0 }))
     const onPlay = () => setState(s => ({ ...s, playing: true }))
     const onPause = () => setState(s => ({ ...s, playing: false }))
@@ -51,6 +64,7 @@ export function usePlayer() {
     audio.addEventListener('ended', onEnded)
 
     return () => {
+      if (rafPending !== null) cancelAnimationFrame(rafPending)
       audio.removeEventListener('timeupdate', onTimeUpdate)
       audio.removeEventListener('durationchange', onDurationChange)
       audio.removeEventListener('play', onPlay)
@@ -201,13 +215,21 @@ export function usePlayer() {
 
   const removeFromQueue = useCallback((index: number) => {
     setState(s => {
-      if (index === s.queueIndex) return s
       const newQueue = [...s.queue]
       newQueue.splice(index, 1)
+      if (index === s.queueIndex) {
+        if (newQueue.length === 0) {
+          return { ...s, queue: [], queueIndex: 0, currentTrack: null, playing: false }
+        }
+        const nextIndex = Math.min(index, newQueue.length - 1)
+        const track = newQueue[nextIndex]
+        loadTrack(track, s.playing)
+        return { ...s, queue: newQueue, queueIndex: nextIndex, currentTrack: track }
+      }
       const qi = index < s.queueIndex ? s.queueIndex - 1 : s.queueIndex
       return { ...s, queue: newQueue, queueIndex: qi }
     })
-  }, [])
+  }, [loadTrack])
 
   const cycleRepeat = useCallback(() => {
     setState(s => {
