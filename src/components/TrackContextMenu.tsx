@@ -60,7 +60,7 @@ export function TrackContextMenu({
           </div>
 
           <button onClick={action(onPlay)} className="w-full flex items-center gap-4 px-5 py-4 active:bg-white/5 border-b border-white/5">
-            <span className="text-white text-lg w-6 text-center">▶</span>
+            <span className="text-white text-lg w-6 text-center">▶{'\uFE0E'}</span>
             <span className="text-white text-sm font-medium">Play</span>
           </button>
 
@@ -76,7 +76,7 @@ export function TrackContextMenu({
 
           <button onClick={action(onToggleLike)} className="w-full flex items-center gap-4 px-5 py-4 active:bg-white/5 border-b border-white/5">
             <span className={`text-lg w-6 text-center ${isLiked ? 'text-pink-400' : 'text-white'}`}>
-              {isLiked ? '♥' : '♡'}
+              {isLiked ? `♥${'\uFE0E'}` : `♡${'\uFE0E'}`}
             </span>
             <span className="text-white text-sm font-medium">{isLiked ? 'Unlike' : 'Like'}</span>
           </button>

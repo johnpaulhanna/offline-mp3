@@ -19,7 +19,7 @@ function Sym({ ch, size = 24, className = '' }: { ch: string; size?: number; cla
   )
 }
 
-export const PlayIcon          = (p: IconProps) => <Sym ch="▶"         {...p} />
+export const PlayIcon          = (p: IconProps) => <Sym ch={`▶${T}`}   {...p} />
 export const PauseIcon         = (p: IconProps) => <Sym ch={`⏸${T}`}   {...p} />
 export const NextIcon          = (p: IconProps) => <Sym ch={`⏭${T}`}   {...p} />
 export const PrevIcon          = (p: IconProps) => <Sym ch={`⏮${T}`}   {...p} />

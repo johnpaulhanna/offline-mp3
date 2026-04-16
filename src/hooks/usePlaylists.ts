@@ -11,9 +11,12 @@ export function usePlaylistTracks(playlistId: number) {
       .where('playlistId').equals(playlistId)
       .sortBy('position')
     const tracks = await db.tracks.bulkGet(pts.map(pt => pt.trackId))
+    const pairs = pts
+      .map((pt, i) => ({ pt, track: tracks[i] }))
+      .filter((p): p is { pt: typeof pts[0]; track: Track } => p.track !== undefined)
     return {
-      pts,
-      tracks: tracks.filter((t): t is Track => t !== undefined),
+      pts: pairs.map(p => p.pt),
+      tracks: pairs.map(p => p.track),
     }
   }, [playlistId])
 }

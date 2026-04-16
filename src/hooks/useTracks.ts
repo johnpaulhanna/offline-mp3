@@ -12,7 +12,10 @@ export function useTracks(sort: SortKey = 'title') {
 }
 
 export async function deleteTrack(id: number) {
-  await db.tracks.delete(id)
+  await db.transaction('rw', db.tracks, db.playlistTracks, async () => {
+    await db.tracks.delete(id)
+    await db.playlistTracks.where('trackId').equals(id).delete()
+  })
 }
 
 export async function toggleLike(id: number) {
