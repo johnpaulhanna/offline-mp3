@@ -9,6 +9,7 @@ export interface Track {
   fileBlob: Blob
   coverBlob: Blob | null
   addedAt: number
+  liked?: boolean
 }
 
 export interface Playlist {
@@ -38,6 +39,9 @@ class MusicDB extends Dexie {
     this.version(2).stores({
       playlists: '++id, name, createdAt',
       playlistTracks: '++id, playlistId, trackId',
+    })
+    this.version(3).stores({
+      tracks: '++id, title, artist, album, addedAt, liked',
     })
   }
 }

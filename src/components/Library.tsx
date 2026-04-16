@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
-import { useTracks, deleteTrack, type SortKey } from '../hooks/useTracks'
+import { useTracks, deleteTrack, toggleLike, type SortKey } from '../hooks/useTracks'
 import type { Track } from '../db'
 import { CoverArt } from './CoverArt'
-import { MusicNoteIcon } from './Icons'
+import { MusicNoteIcon, HeartIcon, HeartFilledIcon } from './Icons'
 import { AddToPlaylistModal } from './AddToPlaylistModal'
 import { TrackContextMenu } from './TrackContextMenu'
 
@@ -10,26 +10,29 @@ interface Props {
   onPlay: (tracks: Track[], index: number) => void
   onPlayAndOpen: (tracks: Track[], index: number) => void
   onPlayNext: (track: Track) => void
+  onAddToQueue: (track: Track) => void
   currentTrackId?: number
   playing: boolean
 }
 
-export function Library({ onPlay, onPlayAndOpen, onPlayNext, currentTrackId, playing }: Props) {
+export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, currentTrackId, playing }: Props) {
   const [sort, setSort] = useState<SortKey>('title')
   const [search, setSearch] = useState('')
+  const [showLiked, setShowLiked] = useState(false)
   const [contextTrack, setContextTrack] = useState<{ track: Track; idx: number; all: Track[] } | null>(null)
   const [addingTrackId, setAddingTrackId] = useState<number | null>(null)
 
   const allTracks = useTracks(sort)
-  const tracks = search.trim()
+  const searched = search.trim()
     ? allTracks.filter(t =>
         [t.title, t.artist, t.album].some(f =>
           f.toLowerCase().includes(search.toLowerCase())
         )
       )
     : allTracks
+  const tracks = showLiked ? searched.filter(t => t.liked) : searched
 
-  // Long press state
+  // Long press
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpStart = useRef<{ x: number; y: number } | null>(null)
   const lpFired = useRef(false)
@@ -96,25 +99,41 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, currentTrackId, pla
           />
         </div>
 
-        {/* Sort tabs */}
-        <div className="flex gap-1 px-4 pb-2 shrink-0">
-          {(['title', 'artist', 'album'] as SortKey[]).map(key => (
-            <button
-              key={key}
-              onClick={() => setSort(key)}
-              className={`text-xs px-3 py-1.5 rounded-full capitalize font-medium transition-colors ${
-                sort === key ? 'bg-white/15 text-white' : 'text-white/35 active:bg-white/10'
-              }`}
-            >
-              {key}
-            </button>
-          ))}
+        {/* Sort tabs + liked filter */}
+        <div className="flex items-center gap-1 px-4 pb-2 shrink-0">
+          <div className="flex gap-1 flex-1">
+            {(['title', 'artist', 'album'] as SortKey[]).map(key => (
+              <button
+                key={key}
+                onClick={() => setSort(key)}
+                className={`text-xs px-3 py-1.5 rounded-full capitalize font-medium transition-colors ${
+                  sort === key ? 'bg-white/15 text-white' : 'text-white/35 active:bg-white/10'
+                }`}
+              >
+                {key}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowLiked(p => !p)}
+            className={`px-2.5 py-1.5 rounded-full transition-colors ${
+              showLiked ? 'bg-pink-500/20' : 'active:bg-white/10'
+            }`}
+            aria-label="Show liked songs"
+          >
+            {showLiked
+              ? <HeartFilledIcon size={16} className="text-pink-400" />
+              : <HeartIcon size={16} className="text-white/35" />
+            }
+          </button>
         </div>
 
         {/* Track list */}
         <div className="overflow-y-auto flex-1">
-          {tracks.length === 0 && search ? (
-            <p className="text-gray-500 text-sm text-center mt-12">No results for "{search}"</p>
+          {tracks.length === 0 ? (
+            <p className="text-gray-500 text-sm text-center mt-12">
+              {showLiked ? 'No liked songs yet' : `No results for "${search}"`}
+            </p>
           ) : (
             tracks.map((track, idx) => {
               const isActive = track.id === currentTrackId
@@ -145,6 +164,9 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, currentTrackId, pla
                       )}
                     </p>
                   </div>
+                  {track.liked && (
+                    <HeartFilledIcon size={14} className="text-pink-400 shrink-0" />
+                  )}
                   <span className="text-xs text-gray-600 shrink-0 tabular-nums">
                     {formatDuration(track.duration)}
                   </span>
@@ -163,12 +185,16 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, currentTrackId, pla
           onClose={() => setContextTrack(null)}
           onPlay={() => { onPlayAndOpen(contextTrack.all, contextTrack.idx); setContextTrack(null) }}
           onPlayNext={() => { onPlayNext(contextTrack.track); setContextTrack(null) }}
+          onAddToQueue={() => { onAddToQueue(contextTrack.track); setContextTrack(null) }}
           onAddToPlaylist={() => { setAddingTrackId(contextTrack.track.id!); setContextTrack(null) }}
+          onToggleLike={async () => {
+            await toggleLike(contextTrack.track.id!, !contextTrack.track.liked)
+            setContextTrack(null)
+          }}
           onDelete={async () => { await deleteTrack(contextTrack.track.id!); setContextTrack(null) }}
         />
       )}
 
-      {/* Add to playlist modal */}
       {addingTrackId != null && (
         <AddToPlaylistModal
           trackId={addingTrackId}

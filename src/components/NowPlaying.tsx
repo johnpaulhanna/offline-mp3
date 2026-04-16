@@ -1,9 +1,13 @@
 import { useRef, useState, useEffect } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import type { PlayerState } from '../hooks/usePlayer'
+import { toggleLike } from '../hooks/useTracks'
+import { db } from '../db'
 import { CoverArt } from './CoverArt'
 import {
   PlayIcon, PauseIcon, NextIcon, PrevIcon,
-  ShuffleIcon, RepeatIcon, RepeatOneIcon, ChevronDownIcon
+  ShuffleIcon, RepeatIcon, RepeatOneIcon, ChevronDownIcon,
+  HeartIcon, HeartFilledIcon,
 } from './Icons'
 
 interface Props {
@@ -83,6 +87,15 @@ export function NowPlaying({
     swipeAllowed.current = false
   }
 
+  // Reactive liked state — stays in sync even if toggled from Library
+  const liked = useLiveQuery(
+    () => currentTrack?.id != null
+      ? db.tracks.get(currentTrack.id).then(t => !!t?.liked)
+      : Promise.resolve(false),
+    [currentTrack?.id],
+    false
+  ) ?? false
+
   if (!currentTrack) return null
 
   return (
@@ -148,10 +161,22 @@ export function NowPlaying({
           />
         </div>
 
-        {/* Track info */}
-        <div className="px-6 pt-4 pb-2">
-          <p className="text-white text-xl font-bold truncate">{currentTrack.title}</p>
-          <p className="text-white/60 text-sm truncate mt-0.5">{currentTrack.artist}</p>
+        {/* Track info + like */}
+        <div className="flex items-center gap-3 px-6 pt-4 pb-2">
+          <div className="flex-1 min-w-0">
+            <p className="text-white text-xl font-bold truncate">{currentTrack.title}</p>
+            <p className="text-white/60 text-sm truncate mt-0.5">{currentTrack.artist}</p>
+          </div>
+          <button
+            onClick={() => currentTrack.id != null && toggleLike(currentTrack.id, !liked)}
+            className="w-10 h-10 flex items-center justify-center shrink-0 active:scale-90 transition-transform"
+            aria-label={liked ? 'Unlike' : 'Like'}
+          >
+            {liked
+              ? <HeartFilledIcon size={24} className="text-pink-400" />
+              : <HeartIcon size={24} className="text-white/40" />
+            }
+          </button>
         </div>
 
         {/* Seek bar */}

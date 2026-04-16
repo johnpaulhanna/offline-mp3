@@ -14,3 +14,7 @@ export function useTracks(sort: SortKey = 'title') {
 export async function deleteTrack(id: number) {
   await db.tracks.delete(id)
 }
+
+export async function toggleLike(id: number, liked: boolean) {
+  await db.tracks.update(id, { liked })
+}

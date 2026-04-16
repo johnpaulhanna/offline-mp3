@@ -6,17 +6,22 @@ interface Props {
   onClose: () => void
   onPlay: () => void
   onPlayNext: () => void
+  onAddToQueue: () => void
   onAddToPlaylist: () => void
-  onDelete?: () => void    // library: delete from library
-  onRemove?: () => void    // playlist: remove from playlist
+  onToggleLike: () => void
+  onDelete?: () => void   // library: delete from library
+  onRemove?: () => void   // playlist: remove from playlist
 }
 
-export function TrackContextMenu({ track, onClose, onPlay, onPlayNext, onAddToPlaylist, onDelete, onRemove }: Props) {
+export function TrackContextMenu({
+  track, onClose, onPlay, onPlayNext, onAddToQueue,
+  onAddToPlaylist, onToggleLike, onDelete, onRemove,
+}: Props) {
   const action = (fn: () => void) => () => { fn(); onClose() }
+  const isLiked = !!track.liked
 
   return (
     <div className="fixed inset-0 z-50 flex items-end">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative w-full" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
@@ -40,6 +45,18 @@ export function TrackContextMenu({ track, onClose, onPlay, onPlayNext, onAddToPl
             <span className="text-white text-sm font-medium">Play Next</span>
           </button>
 
+          <button onClick={action(onAddToQueue)} className="w-full flex items-center gap-4 px-5 py-4 active:bg-white/5 border-b border-white/5">
+            <span className="text-white text-lg w-6 text-center">⊞</span>
+            <span className="text-white text-sm font-medium">Add to Queue</span>
+          </button>
+
+          <button onClick={action(onToggleLike)} className="w-full flex items-center gap-4 px-5 py-4 active:bg-white/5 border-b border-white/5">
+            <span className={`text-lg w-6 text-center ${isLiked ? 'text-pink-400' : 'text-white'}`}>
+              {isLiked ? '♥' : '♡'}
+            </span>
+            <span className="text-white text-sm font-medium">{isLiked ? 'Unlike' : 'Like'}</span>
+          </button>
+
           <button onClick={action(onAddToPlaylist)} className="w-full flex items-center gap-4 px-5 py-4 active:bg-white/5 border-b border-white/5">
             <span className="text-white text-lg w-6 text-center">⊕</span>
             <span className="text-white text-sm font-medium">Add to Playlist</span>
@@ -60,7 +77,6 @@ export function TrackContextMenu({ track, onClose, onPlay, onPlayNext, onAddToPl
           )}
         </div>
 
-        {/* Cancel */}
         <button
           onClick={onClose}
           className="mx-3 w-[calc(100%-1.5rem)] bg-gray-900 rounded-2xl py-4 text-white font-semibold text-base active:bg-gray-800"

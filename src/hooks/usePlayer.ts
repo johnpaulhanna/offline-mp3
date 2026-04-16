@@ -166,6 +166,16 @@ export function usePlayer() {
     })
   }, [loadTrack])
 
+  const addToQueue = useCallback((track: Track) => {
+    setState(s => {
+      if (!s.currentTrack) {
+        loadTrack(track, true)
+        return { ...s, queue: [track], queueIndex: 0, currentTrack: track }
+      }
+      return { ...s, queue: [...s.queue, track] }
+    })
+  }, [loadTrack])
+
   const cycleRepeat = useCallback(() => {
     setState(s => {
       const modes: RepeatMode[] = ['none', 'all', 'one']
@@ -212,5 +222,5 @@ export function usePlayer() {
     navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused'
   }, [state.playing])
 
-  return { state, playQueue, playNext, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat }
+  return { state, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat }
 }

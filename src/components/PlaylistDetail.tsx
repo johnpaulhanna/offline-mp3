@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useMemo } from 'react'
 import { usePlaylistTracks, removeFromPlaylist, updatePlaylistCover } from '../hooks/usePlaylists'
+import { toggleLike } from '../hooks/useTracks'
 import type { Playlist, Track } from '../db'
 import { CoverArt } from './CoverArt'
 import { ChevronLeftIcon, PlayIcon, ShuffleIcon } from './Icons'
@@ -13,11 +14,12 @@ interface Props {
   onPlay: (tracks: Track[], index: number) => void
   onPlayAll: (tracks: Track[], index: number) => void
   onPlayNext: (track: Track) => void
+  onAddToQueue: (track: Track) => void
   onPlayShuffle: (tracks: Track[]) => void
   onBack: () => void
 }
 
-export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPlayAll, onPlayNext, onPlayShuffle, onBack }: Props) {
+export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPlayAll, onPlayNext, onAddToQueue, onPlayShuffle, onBack }: Props) {
   const data = usePlaylistTracks(playlist.id!)
   const tracks = data?.tracks ?? []
   const pts = data?.pts ?? []
@@ -227,7 +229,12 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
           onClose={() => setContextTrack(null)}
           onPlay={() => { onPlayAll(tracks, contextTrack.idx); setContextTrack(null) }}
           onPlayNext={() => { onPlayNext(contextTrack.track); setContextTrack(null) }}
+          onAddToQueue={() => { onAddToQueue(contextTrack.track); setContextTrack(null) }}
           onAddToPlaylist={() => { setAddingTrackId(contextTrack.track.id!); setContextTrack(null) }}
+          onToggleLike={async () => {
+            await toggleLike(contextTrack.track.id!, !contextTrack.track.liked)
+            setContextTrack(null)
+          }}
           onRemove={async () => { await removeFromPlaylist(contextTrack.ptId); setContextTrack(null) }}
         />
       )}
