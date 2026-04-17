@@ -59,7 +59,7 @@ export function AddToPlaylistModal({ trackId, onClose }: Props) {
       />
 
       <div
-        className="relative w-full bg-gray-950 rounded-t-2xl"
+        className="relative w-full bg-[#1c1c1e] rounded-t-2xl"
         style={{
           paddingBottom: 'env(safe-area-inset-bottom)',
           transform: visible ? 'translateY(0)' : 'translateY(100%)',
@@ -87,7 +87,7 @@ export function AddToPlaylistModal({ trackId, onClose }: Props) {
             onChange={e => setNewName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleCreate()}
             placeholder="New playlist name…"
-            className="flex-1 bg-gray-800 text-white placeholder-gray-500 text-sm px-3 py-2 rounded-2xl outline-none focus:bg-gray-700 transition-colors"
+            className="flex-1 bg-white/[0.08] text-white placeholder-gray-500 text-sm px-3 py-2 rounded-2xl outline-none focus:bg-white/[0.12] transition-colors"
           />
           <button
             onClick={handleCreate}
@@ -114,7 +114,7 @@ export function AddToPlaylistModal({ trackId, onClose }: Props) {
               >
                 <span className="text-white text-sm">{pl.name}</span>
                 {isAdded && (
-                  <span className="text-green-400 text-xs font-semibold">Added ✓</span>
+                  <span className="text-[#fc3c44] text-xs font-semibold">Added ✓</span>
                 )}
               </button>
             )

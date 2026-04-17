@@ -10,7 +10,7 @@ interface Props {
 export function TabBar({ active, onChange }: Props) {
   return (
     <div
-      className="shrink-0 rounded-t-3xl bg-gray-950/95 backdrop-blur border-t border-white/5"
+      className="shrink-0 bg-black/90 backdrop-blur border-t border-white/[0.08]"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <div className="flex">
@@ -22,7 +22,7 @@ export function TabBar({ active, onChange }: Props) {
             key={id}
             onClick={() => onChange(id)}
             className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors active:opacity-70 ${
-              active === id ? 'text-white' : 'text-white/30'
+              active === id ? 'text-[#fc3c44]' : 'text-white/40'
             }`}
           >
             <Icon size={22} />

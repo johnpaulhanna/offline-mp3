@@ -50,7 +50,7 @@ export function TrackContextMenu({
         }}
       >
         {/* Track identity card */}
-        <div className="mx-3 mb-2 bg-gray-900 rounded-2xl overflow-hidden">
+        <div className="mx-3 mb-2 bg-[#1c1c1e] rounded-2xl overflow-hidden">
           <div className="flex items-center gap-3 px-4 py-4 border-b border-white/8">
             <CoverArt blob={track.coverBlob} size={48} className="rounded-lg shrink-0" />
             <div className="min-w-0">
@@ -103,7 +103,7 @@ export function TrackContextMenu({
 
         <button
           onClick={close}
-          className="mx-3 w-[calc(100%-1.5rem)] bg-gray-900 rounded-2xl py-4 text-white font-semibold text-base active:bg-gray-800 transition-colors"
+          className="mx-3 w-[calc(100%-1.5rem)] bg-[#1c1c1e] rounded-2xl py-4 text-white font-semibold text-base active:bg-[#2c2c2e] transition-colors"
         >
           Cancel
         </button>

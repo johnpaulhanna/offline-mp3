@@ -37,6 +37,7 @@ export const HeartIcon         = (p: IconProps) => <Sym ch={`♡${T}`}   {...p} 
 export const HeartFilledIcon   = (p: IconProps) => <Sym ch={`♥${T}`}   {...p} />
 export const QueueIcon         = (p: IconProps) => <Sym ch="≣"          {...p} />
 export const DragHandleIcon    = (p: IconProps) => <Sym ch="⠿"          {...p} />
+export const ImportIcon        = (p: IconProps) => <Sym ch="↓"          {...p} />
 
 export function RepeatOneIcon({ size = 24, className = '' }: IconProps) {
   return (

@@ -153,7 +153,7 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-white truncate leading-snug">
                       {isActive && playing && (
-                        <span className="inline-block w-2 h-2 rounded-full bg-green-400 mr-1.5 mb-0.5 animate-pulse" />
+                        <span className="inline-block w-2 h-2 rounded-full bg-[#fc3c44] mr-1.5 mb-0.5 animate-pulse" />
                       )}
                       {track.title}
                     </p>

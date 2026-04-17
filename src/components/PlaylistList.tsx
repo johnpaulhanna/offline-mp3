@@ -49,7 +49,7 @@ export function PlaylistList({ onSelect }: Props) {
       {/* New playlist input */}
       {creating && (
         <div className="px-4 pb-3 shrink-0">
-          <div className="flex items-center gap-2 bg-gray-800 rounded-2xl px-4 py-3">
+          <div className="flex items-center gap-2 bg-[#2c2c2e] rounded-2xl px-4 py-3">
             <input
               autoFocus
               type="text"
@@ -71,7 +71,7 @@ export function PlaylistList({ onSelect }: Props) {
             <button
               onClick={handleCreate}
               disabled={!newName.trim() || processing}
-              className="text-blue-400 text-sm font-semibold px-1 disabled:opacity-30 active:opacity-50"
+              className="text-[#fc3c44] text-sm font-semibold px-1 disabled:opacity-30 active:opacity-50"
             >
               Create
             </button>

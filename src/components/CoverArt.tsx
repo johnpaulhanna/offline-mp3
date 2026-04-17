@@ -23,7 +23,7 @@ export function CoverArt({ blob, size, fluid = false, className = '', style }: P
     return url
       ? <img src={url} alt="" className={base} style={style} />
       : (
-        <div className={`aspect-square flex items-center justify-center bg-gray-800 shrink-0 ${className}`} style={style}>
+        <div className={`aspect-square flex items-center justify-center bg-[#2c2c2e] shrink-0 ${className}`} style={style}>
           <span className="text-gray-500 text-[40%]">♪</span>
         </div>
       )
@@ -33,7 +33,7 @@ export function CoverArt({ blob, size, fluid = false, className = '', style }: P
   if (!url) {
     return (
       <div
-        className={`flex items-center justify-center bg-gray-800 rounded shrink-0 ${className}`}
+        className={`flex items-center justify-center bg-[#2c2c2e] rounded shrink-0 ${className}`}
         style={{ width: sz, height: sz, ...style }}
       >
         <span className="text-gray-500" style={{ fontSize: sz * 0.4 }}>♪</span>

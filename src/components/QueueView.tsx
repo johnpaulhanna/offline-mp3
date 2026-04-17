@@ -3,7 +3,7 @@ import type { Track } from '../db'
 import { CoverArt } from './CoverArt'
 import { XIcon, DragHandleIcon } from './Icons'
 
-const ROW_H = 64 // px — must match row height below
+const ROW_H = 64
 
 interface Props {
   queue: Track[]
@@ -15,8 +15,8 @@ interface Props {
 }
 
 interface DragState {
-  fromLocal: number   // index within "next up" list
-  fromQueue: number   // actual queue index
+  fromLocal: number
+  fromQueue: number
   startY: number
   dy: number
 }
@@ -25,8 +25,10 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
   const current = queue[queueIndex]
   const nextUp = queue.slice(queueIndex + 1)
 
+  // Ref holds current drag state for stale-closure-free access in event handlers.
+  // useState drives rendering.
+  const dragRef = useRef<DragState | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
-  // Prevents click from firing as a jump right after a drag ends
   const didDrag = useRef(false)
 
   const dragDelta = drag
@@ -36,24 +38,46 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
 
   const startDrag = (e: React.PointerEvent, localIdx: number) => {
     e.stopPropagation()
+    // Capture on the handle so all subsequent pointer events come here even when
+    // the finger moves outside the small handle area
     e.currentTarget.setPointerCapture(e.pointerId)
     didDrag.current = false
-    setDrag({ fromLocal: localIdx, fromQueue: queueIndex + 1 + localIdx, startY: e.clientY, dy: 0 })
+    const d: DragState = {
+      fromLocal: localIdx,
+      fromQueue: queueIndex + 1 + localIdx,
+      startY: e.clientY,
+      dy: 0,
+    }
+    dragRef.current = d
+    setDrag(d)
   }
 
   const moveDrag = (e: React.PointerEvent) => {
-    if (!drag) return
+    const d = dragRef.current
+    if (!d) return
     e.stopPropagation()
-    const dy = e.clientY - drag.startY
+    const dy = e.clientY - d.startY
     if (Math.abs(dy) > 4) didDrag.current = true
-    setDrag(d => d ? { ...d, dy } : null)
+    const updated = { ...d, dy }
+    dragRef.current = updated
+    setDrag(updated)
   }
 
   const endDrag = (e: React.PointerEvent) => {
-    if (!drag) return
+    const d = dragRef.current
+    if (!d) return
     e.stopPropagation()
-    const finalTo = drag.fromQueue + dragDelta
-    if (dragDelta !== 0) onReorder(drag.fromQueue, finalTo)
+    const delta = Math.max(
+      -d.fromLocal,
+      Math.min(nextUp.length - 1 - d.fromLocal, Math.round(d.dy / ROW_H))
+    )
+    if (delta !== 0) onReorder(d.fromQueue, d.fromQueue + delta)
+    dragRef.current = null
+    setDrag(null)
+  }
+
+  const cancelDrag = () => {
+    dragRef.current = null
     setDrag(null)
   }
 
@@ -70,10 +94,11 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
   return (
     <div
       className="absolute inset-0 z-10 flex flex-col animate-sheet-in"
-      style={{ background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' }}
-      onPointerMove={moveDrag}
-      onPointerUp={endDrag}
-      onPointerCancel={() => setDrag(null)}
+      style={{
+        background: 'rgba(0,0,0,0.92)',
+        backdropFilter: 'blur(28px)',
+        WebkitBackdropFilter: 'blur(28px)',
+      }}
     >
       {/* Header */}
       <div
@@ -90,18 +115,23 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
         </button>
       </div>
 
-      <div className="overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
+      <div
+        className="overflow-y-auto flex-1"
+        style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+      >
         {/* Now Playing */}
         {current && (
           <div className="px-4 pb-2">
-            <p className="text-white/40 text-xs font-semibold uppercase tracking-widest px-1 pb-2">Now Playing</p>
+            <p className="text-white/40 text-xs font-semibold uppercase tracking-widest px-1 pb-2">
+              Now Playing
+            </p>
             <div className="flex items-center gap-3 bg-white/[0.08] rounded-2xl px-4 py-3">
               <CoverArt blob={current.coverBlob} size={44} className="rounded-xl shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-white text-sm font-semibold truncate">{current.title}</p>
                 <p className="text-white/50 text-xs truncate mt-0.5">{current.artist}</p>
               </div>
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" />
+              <span className="w-2 h-2 rounded-full bg-[#fc3c44] animate-pulse shrink-0" />
             </div>
           </div>
         )}
@@ -120,14 +150,17 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
                 <div
                   key={`${qIdx}-${track.id}`}
                   className={`absolute left-0 right-0 flex items-center gap-3 px-3 py-3 rounded-2xl select-none ${
-                    isDraggingThis ? 'bg-white/15' : 'bg-white/[0.04]'
+                    isDraggingThis ? 'bg-white/[0.12]' : 'bg-white/[0.04]'
                   }`}
                   style={{
                     top: localIdx * ROW_H,
                     height: ROW_H,
                     transform: rowTransform(localIdx),
-                    transition: isDraggingThis ? 'none' : 'transform 0.18s ease',
+                    transition: isDraggingThis
+                      ? 'background-color 0.1s ease'
+                      : 'transform 0.2s cubic-bezier(0.25,0.46,0.45,0.94)',
                     zIndex: isDraggingThis ? 10 : 1,
+                    willChange: isDraggingThis ? 'transform' : undefined,
                   }}
                   onClick={() => {
                     if (didDrag.current) { didDrag.current = false; return }
@@ -146,8 +179,13 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
                   >
                     <XIcon size={16} />
                   </button>
+                  {/* Drag handle — captures pointer directly so events don't rely on
+                      bubbling to a container element, which is unreliable on iOS */}
                   <div
                     onPointerDown={e => startDrag(e, localIdx)}
+                    onPointerMove={moveDrag}
+                    onPointerUp={endDrag}
+                    onPointerCancel={cancelDrag}
                     onClick={e => e.stopPropagation()}
                     className="w-8 h-8 flex items-center justify-center text-white/25 active:text-white/60 cursor-grab shrink-0 touch-none"
                     aria-label="Drag to reorder"

@@ -1,11 +1,13 @@
 import { useRef, useState, useEffect, useMemo } from 'react'
 import { usePlaylistTracks, removeFromPlaylist, updatePlaylistCover } from '../hooks/usePlaylists'
 import { toggleLike } from '../hooks/useTracks'
+import { importFiles } from '../lib/importTracks'
 import type { Playlist, Track } from '../db'
 import { CoverArt } from './CoverArt'
-import { ChevronLeftIcon, PlayIcon, ShuffleIcon } from './Icons'
+import { ChevronLeftIcon, PlayIcon, ShuffleIcon, PlusIcon, ImportIcon } from './Icons'
 import { TrackContextMenu } from './TrackContextMenu'
 import { AddToPlaylistModal } from './AddToPlaylistModal'
+import { AddSongsModal } from './AddSongsModal'
 
 interface Props {
   playlist: Playlist
@@ -24,11 +26,12 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
   const tracks = data?.tracks ?? []
   const pts = data?.pts ?? []
 
-  // Local cover — updated immediately on pick so UI doesn't wait for DB round-trip
   const [localCover, setLocalCover] = useState<Blob | null>(playlist.coverBlob ?? null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const coverInputRef = useRef<HTMLInputElement>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const [importing, setImporting] = useState(false)
+  const [showAddSongs, setShowAddSongs] = useState(false)
 
-  // Sync if parent navigates to a different playlist without remounting
   useEffect(() => { setLocalCover(playlist.coverBlob ?? null) }, [playlist.coverBlob])
 
   const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -39,8 +42,18 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
     e.target.value = ''
   }
 
-  // Blurred background — use custom cover, else first track's cover.
-  // Memoized so useLiveQuery refires don't revoke/recreate the URL when data is unchanged.
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    setImporting(true)
+    try {
+      await importFiles(files, playlist.id!)
+    } finally {
+      setImporting(false)
+      e.target.value = ''
+    }
+  }
+
   const bgBlob = useMemo(
     () => localCover ?? tracks[0]?.coverBlob ?? null,
     [localCover, tracks]
@@ -56,7 +69,6 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
   const [contextTrack, setContextTrack] = useState<{ track: Track; idx: number; ptId: number } | null>(null)
   const [addingTrackId, setAddingTrackId] = useState<number | null>(null)
 
-  // Long press
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpStart = useRef<{ x: number; y: number } | null>(null)
   const lpFired = useRef(false)
@@ -92,14 +104,9 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
 
   return (
     <>
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleCoverChange}
-      />
+      {/* Hidden file inputs */}
+      <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
+      <input ref={importInputRef} type="file" multiple accept="audio/mpeg,audio/mp3,.mp3" className="hidden" onChange={handleImport} />
 
       <div className="flex flex-col flex-1 overflow-hidden relative">
         {/* Blurred background */}
@@ -117,15 +124,15 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
                   opacity: 0.4,
                 }}
               />
-              <div className="absolute inset-0 bg-gray-950/65" />
+              <div className="absolute inset-0 bg-black/70" />
             </>
           ) : (
-            <div className="absolute inset-0 bg-gray-950" />
+            <div className="absolute inset-0 bg-black" />
           )}
         </div>
 
-        {/* Back button */}
-        <div className="relative flex items-center gap-3 px-4 py-3 shrink-0">
+        {/* Header: back + import + add songs */}
+        <div className="relative flex items-center gap-2 px-4 py-3 shrink-0">
           <button
             onClick={onBack}
             className="text-white w-9 h-9 flex items-center justify-center active:opacity-50 bg-white/10 rounded-full"
@@ -133,6 +140,21 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
             <ChevronLeftIcon size={20} />
           </button>
           <p className="text-white/50 text-sm font-medium flex-1 truncate">Library</p>
+          <button
+            onClick={() => importInputRef.current?.click()}
+            disabled={importing}
+            className="w-9 h-9 flex items-center justify-center bg-white/10 rounded-full active:bg-white/20 transition-colors disabled:opacity-40"
+            aria-label="Import files to playlist"
+          >
+            <ImportIcon size={18} />
+          </button>
+          <button
+            onClick={() => setShowAddSongs(true)}
+            className="w-9 h-9 flex items-center justify-center bg-white/10 rounded-full active:bg-white/20 transition-colors"
+            aria-label="Add songs from library"
+          >
+            <PlusIcon size={18} />
+          </button>
         </div>
 
         {/* Scrollable content */}
@@ -140,24 +162,18 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
 
           {/* Hero */}
           <div className="flex flex-col items-center px-8 pt-4 pb-6">
-            {/* Cover art — tap to change */}
             <div
               className="relative cursor-pointer active:opacity-80 transition-opacity"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => coverInputRef.current?.click()}
             >
-              <CoverArt
-                blob={localCover}
-                size={180}
-                className="rounded-2xl shadow-2xl"
-              />
-              {/* Edit badge */}
+              <CoverArt blob={localCover} size={180} className="rounded-2xl shadow-2xl" />
               <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm border border-white/20 rounded-full px-2.5 py-1 flex items-center gap-1">
                 <span className="text-white text-[10px] font-semibold tracking-wide">EDIT</span>
               </div>
             </div>
 
             <p className="text-white font-bold text-[22px] mt-4 text-center leading-tight">{playlist.name}</p>
-            <p className="text-gray-400 text-sm mt-1.5">
+            <p className="text-white/40 text-sm mt-1.5">
               {tracks.length} {tracks.length === 1 ? 'song' : 'songs'}
             </p>
           </div>
@@ -184,7 +200,10 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
           {tracks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3 px-8 text-center">
               <p className="text-white font-semibold">Empty playlist</p>
-              <p className="text-gray-500 text-sm">Hold a song and tap "Add to Playlist".</p>
+              <p className="text-white/40 text-sm">
+                Tap <span className="text-white font-medium">+</span> to add songs, or{' '}
+                <span className="text-white font-medium">↓</span> to import files directly.
+              </p>
             </div>
           ) : (
             <div className="mx-4 rounded-2xl overflow-hidden bg-white/[0.05]">
@@ -203,15 +222,15 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
                   >
                     <CoverArt blob={track.coverBlob} size={44} className="rounded-xl" />
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-semibold truncate leading-snug ${isActive ? 'text-green-400' : 'text-white'}`}>
+                      <p className={`text-sm font-semibold truncate leading-snug ${isActive ? 'text-[#fc3c44]' : 'text-white'}`}>
                         {isActive && playing && (
-                          <span className="inline-block w-2 h-2 rounded-full bg-green-400 mr-1.5 mb-0.5 animate-pulse" />
+                          <span className="inline-block w-2 h-2 rounded-full bg-[#fc3c44] mr-1.5 mb-0.5 animate-pulse" />
                         )}
                         {track.title}
                       </p>
-                      <p className="text-xs text-gray-500 truncate mt-0.5">{track.artist}</p>
+                      <p className="text-xs text-white/40 truncate mt-0.5">{track.artist}</p>
                     </div>
-                    <span className="text-xs text-gray-600 shrink-0 tabular-nums">{formatDuration(track.duration)}</span>
+                    <span className="text-xs text-white/30 shrink-0 tabular-nums">{formatDuration(track.duration)}</span>
                   </div>
                 )
               })}
@@ -222,7 +241,6 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
         </div>
       </div>
 
-      {/* Context menu */}
       {contextTrack && (
         <TrackContextMenu
           track={contextTrack.track}
@@ -241,6 +259,10 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
 
       {addingTrackId != null && (
         <AddToPlaylistModal trackId={addingTrackId} onClose={() => setAddingTrackId(null)} />
+      )}
+
+      {showAddSongs && (
+        <AddSongsModal playlistId={playlist.id!} onClose={() => setShowAddSongs(false)} />
       )}
     </>
   )
