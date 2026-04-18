@@ -1,11 +1,80 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { usePlaylists, createPlaylist, deletePlaylist } from '../hooks/usePlaylists'
 import type { Playlist } from '../db'
-import { PlusIcon, TrashIcon, PlaylistIcon } from './Icons'
+import { PlusIcon, PlaylistIcon } from './Icons'
 import { CoverArt } from './CoverArt'
 
 interface Props {
   onSelect: (playlist: Playlist) => void
+}
+
+interface ContextMenu {
+  playlist: Playlist
+  visible: boolean
+}
+
+function PlaylistContextMenu({ playlist, onClose, onDelete }: { playlist: Playlist; onClose: () => void; onDelete: () => void }) {
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setVisible(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
+
+  const close = () => {
+    setVisible(false)
+    setTimeout(onClose, 280)
+  }
+
+  const handleDelete = () => {
+    onDelete()
+    close()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end">
+      <div
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        style={{ opacity: visible ? 1 : 0, transition: 'opacity 260ms ease' }}
+        onClick={close}
+      />
+
+      <div
+        className="relative w-full"
+        style={{
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          transform: visible ? 'translateY(0)' : 'translateY(100%)',
+          transition: 'transform 300ms cubic-bezier(0.32,0.72,0,1)',
+        }}
+      >
+        <div className="mx-3 mb-2 bg-[#1c1c1e] rounded-2xl overflow-hidden">
+          {/* Playlist identity */}
+          <div className="flex items-center gap-3 px-4 py-4 border-b border-white/8">
+            <CoverArt blob={playlist.coverBlob ?? null} size={48} className="rounded-lg shrink-0" />
+            <div className="min-w-0">
+              <p className="text-white font-semibold text-sm truncate">{playlist.name}</p>
+              <p className="text-gray-400 text-xs">Playlist</p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleDelete}
+            className="w-full flex items-center gap-4 px-5 py-4 active:bg-white/5"
+          >
+            <span className="text-red-400 text-lg w-6 text-center">✕</span>
+            <span className="text-red-400 text-sm font-medium">Delete Playlist</span>
+          </button>
+        </div>
+
+        <button
+          onClick={close}
+          className="mx-3 w-[calc(100%-1.5rem)] bg-[#1c1c1e] rounded-2xl py-4 text-white font-semibold text-base active:bg-[#2c2c2e] transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
 }
 
 export function PlaylistList({ onSelect }: Props) {
@@ -13,6 +82,7 @@ export function PlaylistList({ onSelect }: Props) {
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
   const [processing, setProcessing] = useState(false)
+  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
 
   const handleCreate = async () => {
     const name = newName.trim()
@@ -27,9 +97,28 @@ export function PlaylistList({ onSelect }: Props) {
     }
   }
 
-  const handleDelete = async (e: React.MouseEvent, id: number) => {
-    e.stopPropagation()
-    await deletePlaylist(id)
+  // Long-press detection
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const didLongPress = useRef(false)
+
+  const startLongPress = (pl: Playlist) => {
+    didLongPress.current = false
+    longPressTimer.current = setTimeout(() => {
+      didLongPress.current = true
+      setContextMenu({ playlist: pl, visible: true })
+    }, 500)
+  }
+
+  const cancelLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }
+
+  const handleTap = (pl: Playlist) => {
+    if (didLongPress.current) return
+    onSelect(pl)
   }
 
   return (
@@ -95,10 +184,12 @@ export function PlaylistList({ onSelect }: Props) {
           playlists.map(pl => (
             <div
               key={pl.id}
-              onClick={() => onSelect(pl)}
-              className="flex items-center gap-4 px-4 py-3 active:bg-white/[0.05] cursor-pointer border-b border-white/[0.05] last:border-0"
+              onPointerDown={() => startLongPress(pl)}
+              onPointerUp={() => { cancelLongPress(); handleTap(pl) }}
+              onPointerCancel={cancelLongPress}
+              onPointerLeave={cancelLongPress}
+              className="flex items-center gap-4 px-4 py-3 active:bg-white/[0.05] cursor-pointer border-b border-white/[0.05] last:border-0 select-none"
             >
-              {/* Artwork */}
               <div className="shrink-0">
                 <CoverArt
                   blob={pl.coverBlob ?? null}
@@ -106,26 +197,23 @@ export function PlaylistList({ onSelect }: Props) {
                   className="rounded-xl shadow"
                 />
               </div>
-
-              {/* Name + subtitle */}
               <div className="flex-1 min-w-0">
                 <p className="text-white font-semibold text-[15px] truncate">{pl.name}</p>
                 <p className="text-gray-500 text-xs mt-0.5">Playlist</p>
               </div>
-
-              {/* Delete */}
-              <button
-                onClick={e => pl.id != null && handleDelete(e, pl.id)}
-                className="w-8 h-8 flex items-center justify-center text-white/[0.15] active:text-red-400 transition-colors shrink-0"
-                aria-label="Delete playlist"
-              >
-                <TrashIcon size={15} />
-              </button>
             </div>
           ))
         )}
         <div className="h-28" />
       </div>
+
+      {contextMenu && (
+        <PlaylistContextMenu
+          playlist={contextMenu.playlist}
+          onClose={() => setContextMenu(null)}
+          onDelete={() => contextMenu.playlist.id != null && deletePlaylist(contextMenu.playlist.id)}
+        />
+      )}
     </div>
   )
 }
