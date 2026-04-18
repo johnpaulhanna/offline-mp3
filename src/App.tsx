@@ -9,7 +9,6 @@ import { TabBar, type Tab } from './components/TabBar'
 import { PlaylistList } from './components/PlaylistList'
 import { PlaylistDetail } from './components/PlaylistDetail'
 import type { Track, Playlist } from './db'
-import { fixCoverArtIfNeeded } from './lib/fixCoverArt'
 
 export default function App() {
   const { state, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat, reorderQueue, removeFromQueue, jumpTo } = usePlayer()
@@ -18,19 +17,13 @@ export default function App() {
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null)
 
   // SW update — checks immediately on load and every 20s while open
+  // updateServiceWorker(true) handles the reload itself; no controllerchange handler needed
   const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({
     onRegisteredSW(_url, r) {
       r?.update()
       setInterval(() => r?.update(), 20_000)
     },
   })
-
-  // When a new SW takes control (skipWaiting fires), reload to get fresh assets
-  useEffect(() => {
-    const handler = () => window.location.reload()
-    navigator.serviceWorker?.addEventListener('controllerchange', handler)
-    return () => navigator.serviceWorker?.removeEventListener('controllerchange', handler)
-  }, [])
 
   // Request persistent storage — re-request on first user gesture since iOS ignores it on page load
   useEffect(() => {
@@ -42,12 +35,6 @@ export default function App() {
     request()
     window.addEventListener('pointerdown', request, { once: true })
     return () => window.removeEventListener('pointerdown', request)
-  }, [])
-
-  // One-time background migration — deferred so cold load finishes first
-  useEffect(() => {
-    const id = setTimeout(fixCoverArtIfNeeded, 3000)
-    return () => clearTimeout(id)
   }, [])
 
   const handlePlay = (tracks: Track[], index: number) => {
