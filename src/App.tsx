@@ -32,11 +32,16 @@ export default function App() {
     return () => navigator.serviceWorker?.removeEventListener('controllerchange', handler)
   }, [])
 
-  // Request persistent storage on first use
+  // Request persistent storage — re-request on first user gesture since iOS ignores it on page load
   useEffect(() => {
-    if ('storage' in navigator && 'persist' in navigator.storage) {
-      navigator.storage.persist().catch(() => {})
+    const request = () => {
+      if ('storage' in navigator && 'persist' in navigator.storage) {
+        navigator.storage.persist().catch(() => {})
+      }
     }
+    request()
+    window.addEventListener('pointerdown', request, { once: true })
+    return () => window.removeEventListener('pointerdown', request)
   }, [])
 
   // One-time background migration to fix cover art for existing tracks
