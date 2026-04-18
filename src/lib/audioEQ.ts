@@ -24,17 +24,26 @@ function save(g: EQGains) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(g)) } catch {}
 }
 
-// Module-level singletons — one set per connected audio element
+let audioEl: HTMLAudioElement | null = null
 let ctx: AudioContext | null = null
-let connectedAudio: HTMLAudioElement | null = null
+let connected = false
 let bassNode: BiquadFilterNode | null = null
 let midNode: BiquadFilterNode | null = null
 let trebleNode: BiquadFilterNode | null = null
 
-export function initEQ(audio: HTMLAudioElement) {
-  if (connectedAudio === audio) return
-  connectedAudio = audio
+// Store audio element reference without touching AudioContext — safe for background audio
+export function setAudioElement(audio: HTMLAudioElement) {
+  audioEl = audio
+  connected = false
+  ctx = null
+  bassNode = null
+  midNode = null
+  trebleNode = null
+}
 
+// Called only when user opens EQ modal — creates AudioContext lazily
+export function ensureEQConnected() {
+  if (connected || !audioEl) return
   try {
     ctx = new AudioContext()
 
@@ -56,13 +65,15 @@ export function initEQ(audio: HTMLAudioElement) {
     midNode.gain.value = gains.mid
     trebleNode.gain.value = gains.treble
 
-    const src = ctx.createMediaElementSource(audio)
+    const src = ctx.createMediaElementSource(audioEl)
     src.connect(bassNode)
     bassNode.connect(midNode)
     midNode.connect(trebleNode)
     trebleNode.connect(ctx.destination)
+
+    connected = true
   } catch (err) {
-    console.error('EQ init failed:', err)
+    console.error('EQ connect failed:', err)
     ctx = null; bassNode = null; midNode = null; trebleNode = null
   }
 }

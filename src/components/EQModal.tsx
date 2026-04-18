@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { setEQGain, applyPreset, getEQGains, EQ_PRESETS, type EQBand, type EQGains } from '../lib/audioEQ'
+import { setEQGain, applyPreset, getEQGains, ensureEQConnected, EQ_PRESETS, type EQBand, type EQGains } from '../lib/audioEQ'
 import { XIcon } from './Icons'
 
 const MIN = -12
@@ -108,6 +108,7 @@ export function EQModal({ onClose }: Props) {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
+    ensureEQConnected()
     const id = requestAnimationFrame(() => setVisible(true))
     return () => cancelAnimationFrame(id)
   }, [])

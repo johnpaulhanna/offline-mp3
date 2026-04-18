@@ -9,6 +9,7 @@ import { TabBar, type Tab } from './components/TabBar'
 import { PlaylistList } from './components/PlaylistList'
 import { PlaylistDetail } from './components/PlaylistDetail'
 import type { Track, Playlist } from './db'
+import { fixCoverArtIfNeeded } from './lib/fixCoverArt'
 
 export default function App() {
   const { state, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat, reorderQueue, removeFromQueue, jumpTo } = usePlayer()
@@ -37,6 +38,9 @@ export default function App() {
       navigator.storage.persist().catch(() => {})
     }
   }, [])
+
+  // One-time background migration to fix cover art for existing tracks
+  useEffect(() => { fixCoverArtIfNeeded() }, [])
 
   const handlePlay = (tracks: Track[], index: number) => {
     playQueue(tracks, index)

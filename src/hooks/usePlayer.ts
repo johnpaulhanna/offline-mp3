@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import type { Track } from '../db'
 import { updateMediaSession } from '../lib/mediaSession'
-import { initEQ, resumeEQ } from '../lib/audioEQ'
+import { setAudioElement, resumeEQ } from '../lib/audioEQ'
 
 export type RepeatMode = 'none' | 'all' | 'one'
 
@@ -38,7 +38,7 @@ export function usePlayer() {
     const audio = new Audio()
     audio.preload = 'auto'
     audioRef.current = audio
-    initEQ(audio)
+    setAudioElement(audio)
 
     let rafPending: number | null = null
     const onTimeUpdate = () => {
