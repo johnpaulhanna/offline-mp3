@@ -3,10 +3,16 @@ import { db } from '../db'
 
 export async function fixCoverArtIfNeeded() {
   if (localStorage.getItem('cover-fix-v2')) return
-  const tracks = await db.tracks.toArray()
-  for (const track of tracks) {
-    if (!track.id || !track.fileBlob) continue
+  // Write flag immediately — prevents crash-loop if we OOM mid-migration
+  localStorage.setItem('cover-fix-v2', '1')
+
+  // Fetch only IDs to avoid pulling all blobs into memory at once
+  const ids = (await db.tracks.toCollection().primaryKeys()) as number[]
+
+  for (const id of ids) {
     try {
+      const track = await db.tracks.get(id)
+      if (!track?.fileBlob) continue
       const meta = await parseBlob(track.fileBlob)
       const pic = meta.common.picture?.[0]
       if (!pic) continue
@@ -14,8 +20,7 @@ export async function fixCoverArtIfNeeded() {
         pic.data.byteOffset,
         pic.data.byteOffset + pic.data.byteLength
       ) as ArrayBuffer
-      await db.tracks.update(track.id, { coverBlob: new Blob([slice], { type: pic.format }) })
+      await db.tracks.update(id, { coverBlob: new Blob([slice], { type: pic.format }) })
     } catch {}
   }
-  localStorage.setItem('cover-fix-v2', '1')
 }

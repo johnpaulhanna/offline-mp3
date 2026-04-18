@@ -44,8 +44,11 @@ export default function App() {
     return () => window.removeEventListener('pointerdown', request)
   }, [])
 
-  // One-time background migration to fix cover art for existing tracks
-  useEffect(() => { fixCoverArtIfNeeded() }, [])
+  // One-time background migration — deferred so cold load finishes first
+  useEffect(() => {
+    const id = setTimeout(fixCoverArtIfNeeded, 3000)
+    return () => clearTimeout(id)
+  }, [])
 
   const handlePlay = (tracks: Track[], index: number) => {
     playQueue(tracks, index)
