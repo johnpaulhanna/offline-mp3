@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import type { Track } from '../db'
 import { updateMediaSession } from '../lib/mediaSession'
+import { initEQ, resumeEQ } from '../lib/audioEQ'
 
 export type RepeatMode = 'none' | 'all' | 'one'
 
@@ -37,6 +38,7 @@ export function usePlayer() {
     const audio = new Audio()
     audio.preload = 'auto'
     audioRef.current = audio
+    initEQ(audio)
 
     let rafPending: number | null = null
     const onTimeUpdate = () => {
@@ -93,6 +95,7 @@ export function usePlayer() {
     audio.load()
 
     if (autoPlay) {
+      resumeEQ()
       audio.play().catch(() => {})
     }
   }, [])
@@ -108,6 +111,7 @@ export function usePlayer() {
   }, [loadTrack])
 
   const play = useCallback(() => {
+    resumeEQ()
     audioRef.current?.play().catch(() => {})
   }, [])
 
@@ -118,8 +122,12 @@ export function usePlayer() {
   const togglePlay = useCallback(() => {
     const audio = audioRef.current
     if (!audio) return
-    if (audio.paused) audio.play().catch(() => {})
-    else audio.pause()
+    if (audio.paused) {
+      resumeEQ()
+      audio.play().catch(() => {})
+    } else {
+      audio.pause()
+    }
   }, [])
 
   const seek = useCallback((time: number) => {

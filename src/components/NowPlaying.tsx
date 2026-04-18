@@ -5,10 +5,11 @@ import { toggleLike } from '../hooks/useTracks'
 import { db } from '../db'
 import { CoverArt } from './CoverArt'
 import { QueueView } from './QueueView'
+import { EQModal } from './EQModal'
 import {
   PlayIcon, PauseIcon, NextIcon, PrevIcon,
   ShuffleIcon, RepeatIcon, RepeatOneIcon, ChevronDownIcon,
-  HeartIcon, HeartFilledIcon, QueueIcon,
+  HeartIcon, HeartFilledIcon, QueueIcon, EQIcon,
 } from './Icons'
 
 interface Props {
@@ -121,8 +122,14 @@ export function NowPlaying({
     prevLiked.current = liked
   }, [liked])
 
-  // Queue sheet
+  // Queue and EQ sheets
   const [showQueue, setShowQueue] = useState(false)
+  const [showEQ, setShowEQ] = useState(false)
+
+  // Close sheets when NowPlaying slides away
+  useEffect(() => {
+    if (!visible) { setShowQueue(false); setShowEQ(false) }
+  }, [visible])
 
   if (!currentTrack) return null
 
@@ -185,13 +192,22 @@ export function NowPlaying({
             <ChevronDownIcon size={20} />
           </button>
           <p className="text-xs font-semibold text-white/60 uppercase tracking-widest">Now Playing</p>
-          <button
-            onClick={() => setShowQueue(q => !q)}
-            className={`w-9 h-9 flex items-center justify-center rounded-full transition-all active:opacity-50 ${showQueue ? 'bg-white/20 text-white' : 'bg-white/10 text-white/70'}`}
-            aria-label="Queue"
-          >
-            <QueueIcon size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setShowEQ(q => !q); setShowQueue(false) }}
+              className={`w-9 h-9 flex items-center justify-center rounded-full transition-all active:opacity-50 ${showEQ ? 'bg-white/20 text-white' : 'bg-white/10 text-white/70'}`}
+              aria-label="Equalizer"
+            >
+              <EQIcon size={18} />
+            </button>
+            <button
+              onClick={() => { setShowQueue(q => !q); setShowEQ(false) }}
+              className={`w-9 h-9 flex items-center justify-center rounded-full transition-all active:opacity-50 ${showQueue ? 'bg-white/20 text-white' : 'bg-white/10 text-white/70'}`}
+              aria-label="Queue"
+            >
+              <QueueIcon size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Cover art */}
@@ -324,6 +340,9 @@ export function NowPlaying({
           onReorder={onReorderQueue}
         />
       )}
+
+      {/* EQ sheet — overlays NowPlaying content */}
+      {showEQ && <EQModal onClose={() => setShowEQ(false)} />}
     </div>
   )
 }

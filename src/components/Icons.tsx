@@ -39,6 +39,24 @@ export const QueueIcon         = (p: IconProps) => <Sym ch="≣"          {...p}
 export const DragHandleIcon    = (p: IconProps) => <Sym ch="⠿"          {...p} />
 export const ImportIcon        = (p: IconProps) => <Sym ch="↓"          {...p} />
 
+// Three bars at different heights — classic EQ icon
+export function EQIcon({ size = 24, className = '' }: IconProps) {
+  const h = Math.round(size * 0.72)
+  const w = Math.round(size * 0.1)
+  const gap = Math.round(size * 0.08)
+  return (
+    <span
+      className={`inline-flex items-end leading-none select-none ${className}`}
+      aria-hidden="true"
+      style={{ height: h, gap }}
+    >
+      <span style={{ width: w, height: '55%', background: 'currentColor', borderRadius: w, display: 'inline-block' }} />
+      <span style={{ width: w, height: '100%', background: 'currentColor', borderRadius: w, display: 'inline-block' }} />
+      <span style={{ width: w, height: '38%', background: 'currentColor', borderRadius: w, display: 'inline-block' }} />
+    </span>
+  )
+}
+
 export function RepeatOneIcon({ size = 24, className = '' }: IconProps) {
   return (
     <span className={`leading-none select-none ${className}`} aria-hidden="true">
