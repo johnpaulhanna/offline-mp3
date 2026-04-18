@@ -46,6 +46,10 @@ export async function removeFromPlaylist(playlistTrackId: number) {
   await db.playlistTracks.delete(playlistTrackId)
 }
 
+export async function renamePlaylist(id: number, name: string) {
+  await db.playlists.update(id, { name: name.trim() })
+}
+
 export async function updatePlaylistCover(id: number, blob: Blob | null) {
   await db.playlists.update(id, { coverBlob: blob })
 }

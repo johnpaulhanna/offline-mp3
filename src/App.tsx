@@ -100,7 +100,11 @@ export default function App() {
           />
         )}
         {tab === 'playlists' && !selectedPlaylist && (
-          <PlaylistList onSelect={setSelectedPlaylist} />
+          <PlaylistList
+            onSelect={setSelectedPlaylist}
+            onPlayAll={handlePlayAndOpen}
+            onPlayShuffle={handlePlayShuffle}
+          />
         )}
         {tab === 'playlists' && selectedPlaylist && (
           <PlaylistDetail
