@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { db, type Track } from '../db'
-import { updateMediaSession, clearMediaSession, setPlaybackState, updatePositionState } from '../lib/mediaSession'
+import { updateMediaSession, clearMediaSession, updatePositionState } from '../lib/mediaSession'
 import { setAudioElement, resumeEQ, releaseEQ } from '../lib/audioEQ'
 import {
   identityOrder,
@@ -176,14 +176,24 @@ export function usePlayer() {
     // Mirror into Media Session synchronously. These listeners run even when the
     // page is suspended and React never gets to commit a render.
     const onPlay = () => {
-      setPlaybackState(true)
       syncPosition()
       setState(s => ({ ...s, playing: true }))
     }
     const onPause = () => {
-      setPlaybackState(false)
       syncPosition()
       setState(s => ({ ...s, playing: false }))
+    }
+
+    // Safari may have played or paused the element natively while this page was
+    // frozen, and those events never reached us. On the way back, the element is
+    // the source of truth.
+    const resyncFromElement = () => {
+      syncPosition()
+      setState(s =>
+        s.playing === !audio.paused && Math.abs(s.position - audio.currentTime) < 0.5
+          ? s
+          : { ...s, playing: !audio.paused, position: audio.currentTime }
+      )
     }
     const onLoadedMetadata = () => {
       if (pendingSeekRef.current !== null) {
@@ -193,9 +203,15 @@ export function usePlayer() {
     }
 
     // Release EQ whenever the page goes hidden so ctx.close() has time to
-    // complete long before the user might press play from the lock screen.
+    // complete long before the user might press play from the lock screen. That
+    // also puts the element back on the default output, which is what lets
+    // Safari drive it natively while we are frozen.
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') releaseEQ()
+      if (document.visibilityState === 'hidden') {
+        releaseEQ()
+      } else {
+        resyncFromElement()
+      }
     }
 
     audio.addEventListener('timeupdate', onTimeUpdate)
@@ -207,6 +223,7 @@ export function usePlayer() {
     audio.addEventListener('seeked', syncPosition)
     audio.addEventListener('ratechange', syncPosition)
     document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('pageshow', resyncFromElement)
 
     return () => {
       if (rafPending !== null) cancelAnimationFrame(rafPending)
@@ -219,6 +236,7 @@ export function usePlayer() {
       audio.removeEventListener('seeked', syncPosition)
       audio.removeEventListener('ratechange', syncPosition)
       document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('pageshow', resyncFromElement)
       audio.pause()
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
     }
@@ -324,38 +342,20 @@ export function usePlayer() {
     })
   }, [])
 
-  const play = useCallback(() => {
-    // Must stay synchronous — iOS loses the Media Session user gesture context
-    // across await boundaries, causing audio.play() to silently fail.
-    if (document.visibilityState === 'hidden') {
-      releaseEQ() // synchronously free AudioContext so audio routes to speakers
-    } else {
-      resumeEQ() // fire-and-forget resume in foreground (no await)
-    }
-    audioRef.current?.play().catch(() => {
-      // Refused. Say so, or the lock screen keeps claiming we're playing and the
-      // next AirPods tap sends 'pause' into audio that is already paused.
-      setPlaybackState(false)
-    })
-  }, [])
-
-  const pause = useCallback(() => {
-    setPlaybackState(false)
+  // Only wired to the Media Session 'stop' action; see mediaSession.ts.
+  const pauseElement = useCallback(() => {
     audioRef.current?.pause()
-    // Release the AudioContext now, while we have time before the user presses
-    // play again. ctx.close() is async at the native level — doing it here
-    // (seconds before play) ensures it's fully closed by the time play() runs.
-    if (document.visibilityState === 'hidden') releaseEQ()
   }, [])
 
+  // In-app play/pause button. Lock screen and AirPods do not come through here —
+  // Safari drives the element directly for those.
   const togglePlay = useCallback(() => {
     const audio = audioRef.current
     if (!audio) return
     if (audio.paused) {
       resumeEQ()
-      audio.play().catch(() => setPlaybackState(false))
+      audio.play().catch(() => {})
     } else {
-      setPlaybackState(false)
       audio.pause()
     }
   }, [])
@@ -516,14 +516,8 @@ export function usePlayer() {
       clearMediaSession()
       return
     }
-    updateMediaSession(currentTrack, { play, pause, next, prev, seekTo: seek })
-  }, [currentTrack, play, pause, next, prev, seek])
-
-  // Backstop for state changes with no corresponding media event — reaching the
-  // end of the queue pauses playback without the element firing 'pause'.
-  useEffect(() => {
-    setPlaybackState(state.playing)
-  }, [state.playing])
+    updateMediaSession(currentTrack, { next, prev, seekTo: seek, stop: pauseElement })
+  }, [currentTrack, next, prev, seek, pauseElement])
 
   return {
     state,

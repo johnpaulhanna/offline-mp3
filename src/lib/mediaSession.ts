@@ -2,14 +2,23 @@ import type { Track } from '../db'
 
 let coverUrl: string | null = null
 
+type Handler = MediaSessionActionHandler | null
+
+function setHandler(action: MediaSessionAction, handler: Handler) {
+  try {
+    navigator.mediaSession.setActionHandler(action, handler)
+  } catch {
+    // action unsupported on this browser
+  }
+}
+
 export function updateMediaSession(
   track: Track,
   handlers: {
-    play: () => void
-    pause: () => void
     next: () => void
     prev: () => void
     seekTo: (time: number) => void
+    stop: () => void
   }
 ) {
   if (!('mediaSession' in navigator)) return
@@ -32,16 +41,42 @@ export function updateMediaSession(
     artwork,
   })
 
-  navigator.mediaSession.setActionHandler('play', handlers.play)
-  navigator.mediaSession.setActionHandler('pause', handlers.pause)
-  navigator.mediaSession.setActionHandler('nexttrack', handlers.next)
-  navigator.mediaSession.setActionHandler('previoustrack', handlers.prev)
-  navigator.mediaSession.setActionHandler('seekto', (details) => {
+  // 'play' and 'pause' are deliberately left to the browser.
+  //
+  // A media session action handler *replaces* Safari's own handling of that
+  // button, and a handler is JavaScript — it can only run while this page is
+  // alive. Playing audio keeps the page alive, so pausing is fine. But once
+  // paused and backgrounded there is nothing keeping it alive, iOS freezes the
+  // page, and the play tap then called into a handler that could never run. The
+  // music simply never came back.
+  //
+  // With no handler, Safari plays and pauses the <audio> element itself, at the
+  // native level, exactly as it does for a plain audio tag — and that keeps
+  // working while the page is frozen. Null them explicitly in case a previous
+  // version of this session installed one.
+  setHandler('play', null)
+  setHandler('pause', null)
+
+  // playbackState is left alone for the same reason. Setting it explicitly
+  // overrides what Safari infers from the element, and a value that goes stale
+  // while the page is frozen makes iOS send the wrong action — a play tap
+  // arriving as 'pause' on already-paused audio, which is silence.
+  navigator.mediaSession.playbackState = 'none'
+
+  // These genuinely need us: they change which track is loaded, which Safari
+  // cannot do on its own. They only work while the page is alive, which is the
+  // case whenever audio is actually playing.
+  setHandler('nexttrack', handlers.next)
+  setHandler('previoustrack', handlers.prev)
+  setHandler('seekto', details => {
     if (details.seekTime != null) handlers.seekTo(details.seekTime)
   })
-  // Intercept stop so the browser doesn't clear the session — treat it as pause
-  // so the user can still resume from the lock screen afterward.
-  navigator.mediaSession.setActionHandler('stop', handlers.pause)
+
+  // Kept deliberately, unlike play/pause. Safari's default for 'stop' tears the
+  // session down, and then there is nothing left to resume from. Registering a
+  // handler suppresses that default — and if we are frozen and it never runs,
+  // the action harmlessly does nothing, which is the outcome we want anyway.
+  setHandler('stop', handlers.stop)
 }
 
 // Anchor the lock-screen scrubber. Without this iOS estimates position itself
@@ -60,15 +95,6 @@ export function updatePositionState(position: number, duration: number, playback
   }
 }
 
-// iOS works out what a single AirPods tap means by reading playbackState: if it
-// believes we are playing, the tap sends 'pause'. So this has to be true at all
-// times, including while the page is suspended in the background — which is why
-// callers set it synchronously rather than letting a React render get to it.
-export function setPlaybackState(playing: boolean) {
-  if (!('mediaSession' in navigator)) return
-  navigator.mediaSession.playbackState = playing ? 'playing' : 'paused'
-}
-
 export function clearMediaSession() {
   if (!('mediaSession' in navigator)) return
   if (coverUrl) {
@@ -80,11 +106,5 @@ export function clearMediaSession() {
   // Drop the handlers too, or the lock screen keeps offering controls for a
   // queue that no longer exists.
   const actions: MediaSessionAction[] = ['play', 'pause', 'nexttrack', 'previoustrack', 'seekto', 'stop']
-  for (const action of actions) {
-    try {
-      navigator.mediaSession.setActionHandler(action, null)
-    } catch {
-      // action unsupported on this browser
-    }
-  }
+  for (const action of actions) setHandler(action, null)
 }
