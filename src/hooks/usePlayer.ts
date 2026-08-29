@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { db, type Track } from '../db'
-import { updateMediaSession, clearMediaSession, updatePositionState } from '../lib/mediaSession'
+import { updateMediaSession, clearMediaSession, updatePositionState, setPlaybackState } from '../lib/mediaSession'
+import { logEvent, describeAudio } from '../lib/debugLog'
 import { setAudioElement, resumeEQ, releaseEQ } from '../lib/audioEQ'
 import {
   identityOrder,
@@ -154,8 +155,15 @@ export function usePlayer() {
   useEffect(() => {
     const audio = new Audio()
     audio.preload = 'auto'
+    audio.setAttribute('playsinline', '')
+    // Kept in the document rather than detached. WebKit treats an element that
+    // is not in the tree as a second-class citizen for Now Playing and remote
+    // commands, and this player has always used a bare `new Audio()`.
+    audio.style.cssText = 'position:fixed;width:0;height:0;opacity:0;pointer-events:none'
+    document.body.appendChild(audio)
     audioRef.current = audio
     setAudioElement(audio)
+    logEvent('audio element created', describeAudio(audio))
 
     let rafPending: number | null = null
     const onTimeUpdate = () => {
@@ -176,18 +184,25 @@ export function usePlayer() {
     // Mirror into Media Session synchronously. These listeners run even when the
     // page is suspended and React never gets to commit a render.
     const onPlay = () => {
+      logEvent('element:play', describeAudio(audio))
+      setPlaybackState(true)
       syncPosition()
       setState(s => ({ ...s, playing: true }))
     }
     const onPause = () => {
+      logEvent('element:pause', describeAudio(audio))
+      setPlaybackState(false)
       syncPosition()
       setState(s => ({ ...s, playing: false }))
     }
+    const noisyEvents = ['error', 'stalled', 'waiting', 'emptied', 'suspend', 'abort'] as const
+    const onNoisy = (e: Event) => logEvent(`element:${e.type}`, describeAudio(audio))
 
     // Safari may have played or paused the element natively while this page was
     // frozen, and those events never reached us. On the way back, the element is
     // the source of truth.
     const resyncFromElement = () => {
+      logEvent('page visible again', describeAudio(audio))
       syncPosition()
       setState(s =>
         s.playing === !audio.paused && Math.abs(s.position - audio.currentTime) < 0.5
@@ -208,11 +223,16 @@ export function usePlayer() {
     // Safari drive it natively while we are frozen.
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
+        logEvent('page hidden', describeAudio(audio))
         releaseEQ()
       } else {
         resyncFromElement()
       }
     }
+    const onFreeze = () => logEvent('page FROZEN by iOS', describeAudio(audio))
+    const onResume = () => logEvent('page resumed by iOS', describeAudio(audio))
+    const onPageHide = (e: PageTransitionEvent) =>
+      logEvent('pagehide', `persisted=${e.persisted} ${describeAudio(audio)}`)
 
     audio.addEventListener('timeupdate', onTimeUpdate)
     audio.addEventListener('durationchange', onDurationChange)
@@ -222,8 +242,12 @@ export function usePlayer() {
     audio.addEventListener('ended', advance)
     audio.addEventListener('seeked', syncPosition)
     audio.addEventListener('ratechange', syncPosition)
+    for (const type of noisyEvents) audio.addEventListener(type, onNoisy)
     document.addEventListener('visibilitychange', onVisibilityChange)
+    document.addEventListener('freeze', onFreeze)
+    document.addEventListener('resume', onResume)
     window.addEventListener('pageshow', resyncFromElement)
+    window.addEventListener('pagehide', onPageHide as EventListener)
 
     return () => {
       if (rafPending !== null) cancelAnimationFrame(rafPending)
@@ -235,9 +259,14 @@ export function usePlayer() {
       audio.removeEventListener('ended', advance)
       audio.removeEventListener('seeked', syncPosition)
       audio.removeEventListener('ratechange', syncPosition)
+      for (const type of noisyEvents) audio.removeEventListener(type, onNoisy)
       document.removeEventListener('visibilitychange', onVisibilityChange)
+      document.removeEventListener('freeze', onFreeze)
+      document.removeEventListener('resume', onResume)
       window.removeEventListener('pageshow', resyncFromElement)
+      window.removeEventListener('pagehide', onPageHide as EventListener)
       audio.pause()
+      audio.remove()
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
     }
   }, [advance])
@@ -342,9 +371,33 @@ export function usePlayer() {
     })
   }, [])
 
-  // Only wired to the Media Session 'stop' action; see mediaSession.ts.
+  // Driven by the lock screen and AirPods via the Media Session handlers.
+  const play = useCallback(() => {
+    const audio = audioRef.current
+    logEvent('play() entered', describeAudio(audio))
+    // Must stay synchronous — iOS loses the Media Session user gesture context
+    // across await boundaries, causing audio.play() to silently fail.
+    if (document.visibilityState === 'hidden') {
+      releaseEQ() // synchronously free AudioContext so audio routes to speakers
+    } else {
+      resumeEQ()
+    }
+    setPlaybackState(true)
+    audio?.play().then(
+      () => logEvent('play() resolved', describeAudio(audio)),
+      (err: unknown) => {
+        logEvent('play() REJECTED', err instanceof Error ? `${err.name}: ${err.message}` : String(err))
+        setPlaybackState(false)
+      }
+    )
+  }, [])
+
   const pauseElement = useCallback(() => {
-    audioRef.current?.pause()
+    const audio = audioRef.current
+    logEvent('pause() entered', describeAudio(audio))
+    setPlaybackState(false)
+    audio?.pause()
+    if (document.visibilityState === 'hidden') releaseEQ()
   }, [])
 
   // In-app play/pause button. Lock screen and AirPods do not come through here —
@@ -516,8 +569,10 @@ export function usePlayer() {
       clearMediaSession()
       return
     }
-    updateMediaSession(currentTrack, { next, prev, seekTo: seek, stop: pauseElement })
-  }, [currentTrack, next, prev, seek, pauseElement])
+    updateMediaSession(currentTrack, {
+      play, pause: pauseElement, next, prev, seekTo: seek, stop: pauseElement,
+    })
+  }, [currentTrack, play, pauseElement, next, prev, seek])
 
   return {
     state,

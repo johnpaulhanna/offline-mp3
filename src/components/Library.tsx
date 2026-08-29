@@ -7,6 +7,7 @@ import { AddToPlaylistModal } from './AddToPlaylistModal'
 import { TrackContextMenu } from './TrackContextMenu'
 import { StorageInfo } from './StorageInfo'
 import { BackupBar } from './BackupBar'
+import { DiagnosticsSheet } from './DiagnosticsSheet'
 
 type DisplaySort = 'alpha' | 'newest' | 'oldest'
 const SORT_LABELS: Record<DisplaySort, string> = { alpha: 'A-Z', newest: 'Newest', oldest: 'Oldest' }
@@ -30,6 +31,7 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
   const [showLiked, setShowLiked] = useState(false)
   const [contextTrack, setContextTrack] = useState<{ track: Track; idx: number; all: Track[] } | null>(null)
   const [addingTrackId, setAddingTrackId] = useState<number | null>(null)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
 
   // Multi-select
   const [selectMode, setSelectMode] = useState(false)
@@ -375,6 +377,12 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
           )}
           <StorageInfo />
           <BackupBar />
+          <button
+            onClick={() => setShowDiagnostics(true)}
+            className="mx-auto mt-2 block text-[10px] text-white/15 active:text-white/40"
+          >
+            Diagnostics
+          </button>
           <div className="h-28" />
         </div>
 
@@ -425,6 +433,8 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
           onDelete={async () => { await deleteTrack(contextTrack.track.id!); setContextTrack(null) }}
         />
       )}
+
+      {showDiagnostics && <DiagnosticsSheet onClose={() => setShowDiagnostics(false)} />}
 
       {addingTrackId != null && (
         <AddToPlaylistModal

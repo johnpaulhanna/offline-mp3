@@ -1,4 +1,5 @@
 import type { Track } from '../db'
+import { logEvent } from './debugLog'
 
 let coverUrl: string | null = null
 
@@ -15,6 +16,8 @@ function setHandler(action: MediaSessionAction, handler: Handler) {
 export function updateMediaSession(
   track: Track,
   handlers: {
+    play: () => void
+    pause: () => void
     next: () => void
     prev: () => void
     seekTo: (time: number) => void
@@ -41,34 +44,29 @@ export function updateMediaSession(
     artwork,
   })
 
-  // 'play' and 'pause' are deliberately left to the browser.
-  //
-  // A media session action handler *replaces* Safari's own handling of that
-  // button, and a handler is JavaScript — it can only run while this page is
-  // alive. Playing audio keeps the page alive, so pausing is fine. But once
-  // paused and backgrounded there is nothing keeping it alive, iOS freezes the
-  // page, and the play tap then called into a handler that could never run. The
-  // music simply never came back.
-  //
-  // With no handler, Safari plays and pauses the <audio> element itself, at the
-  // native level, exactly as it does for a plain audio tag — and that keeps
-  // working while the page is frozen. Null them explicitly in case a previous
-  // version of this session installed one.
-  setHandler('play', null)
-  setHandler('pause', null)
-
-  // playbackState is left alone for the same reason. Setting it explicitly
-  // overrides what Safari infers from the element, and a value that goes stale
-  // while the page is frozen makes iOS send the wrong action — a play tap
-  // arriving as 'pause' on already-paused audio, which is silence.
-  navigator.mediaSession.playbackState = 'none'
-
-  // These genuinely need us: they change which track is loaded, which Safari
-  // cannot do on its own. They only work while the page is alive, which is the
-  // case whenever audio is actually playing.
-  setHandler('nexttrack', handlers.next)
-  setHandler('previoustrack', handlers.prev)
+  // Handlers are registered again. Dropping them so Safari would drive the
+  // element natively did not fix the lock screen, and it risks the opposite
+  // problem: if Safari has no default action for a web page's media element,
+  // play would do nothing even in the foreground. Each one logs, so the
+  // diagnostics sheet shows whether the action reached us at all.
+  setHandler('play', () => {
+    logEvent('mediasession:play')
+    handlers.play()
+  })
+  setHandler('pause', () => {
+    logEvent('mediasession:pause')
+    handlers.pause()
+  })
+  setHandler('nexttrack', () => {
+    logEvent('mediasession:next')
+    handlers.next()
+  })
+  setHandler('previoustrack', () => {
+    logEvent('mediasession:prev')
+    handlers.prev()
+  })
   setHandler('seekto', details => {
+    logEvent('mediasession:seekto', String(details.seekTime))
     if (details.seekTime != null) handlers.seekTo(details.seekTime)
   })
 
@@ -76,7 +74,10 @@ export function updateMediaSession(
   // session down, and then there is nothing left to resume from. Registering a
   // handler suppresses that default — and if we are frozen and it never runs,
   // the action harmlessly does nothing, which is the outcome we want anyway.
-  setHandler('stop', handlers.stop)
+  setHandler('stop', () => {
+    logEvent('mediasession:stop')
+    handlers.stop()
+  })
 }
 
 // Anchor the lock-screen scrubber. Without this iOS estimates position itself
@@ -93,6 +94,14 @@ export function updatePositionState(position: number, duration: number, playback
   } catch {
     // Safari throws on inconsistent values; it just falls back to its own estimate
   }
+}
+
+// iOS picks which action a single AirPods tap sends by reading playbackState,
+// so it has to be right even while the page is frozen. Callers set it
+// synchronously rather than waiting for a React render.
+export function setPlaybackState(playing: boolean) {
+  if (!('mediaSession' in navigator)) return
+  navigator.mediaSession.playbackState = playing ? 'playing' : 'paused'
 }
 
 export function clearMediaSession() {
