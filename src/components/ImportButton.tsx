@@ -4,19 +4,21 @@ import { PlusIcon } from './Icons'
 
 export function ImportButton() {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [importing, setImporting] = useState(false)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
 
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
-    setImporting(true)
+    setProgress({ done: 0, total: files.length })
     try {
-      await importFiles(files)
+      await importFiles(files, undefined, (done, total) => setProgress({ done, total }))
     } finally {
-      setImporting(false)
+      setProgress(null)
       if (inputRef.current) inputRef.current.value = ''
     }
   }
+
+  const importing = progress !== null
 
   return (
     <>
@@ -33,8 +35,8 @@ export function ImportButton() {
         disabled={importing}
         className="flex items-center gap-1.5 bg-white text-black text-sm font-semibold px-3.5 py-1.5 rounded-full disabled:opacity-40 active:scale-95 transition-transform"
       >
-        {importing ? (
-          <span className="text-xs">Importing…</span>
+        {importing && progress ? (
+          <span className="text-xs">{progress.done} / {progress.total}</span>
         ) : (
           <>
             <PlusIcon size={15} />

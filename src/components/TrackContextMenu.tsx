@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { Track } from '../db'
 import { CoverArt } from './CoverArt'
+import { EditTrackModal } from './EditTrackModal'
 
 interface Props {
   track: Track
@@ -19,6 +20,7 @@ export function TrackContextMenu({
   onAddToPlaylist, onToggleLike, onDelete, onRemove,
 }: Props) {
   const [visible, setVisible] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setVisible(true))
@@ -34,6 +36,7 @@ export function TrackContextMenu({
   const isLiked = !!track.liked
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-end">
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
@@ -86,6 +89,14 @@ export function TrackContextMenu({
             <span className="text-white text-sm font-medium">Add to Playlist</span>
           </button>
 
+          <button
+            onClick={() => { setVisible(false); setShowEdit(true) }}
+            className="w-full flex items-center gap-4 px-5 py-4 active:bg-white/5 border-b border-white/5"
+          >
+            <span className="text-white text-lg w-6 text-center">✎</span>
+            <span className="text-white text-sm font-medium">Edit Info</span>
+          </button>
+
           {onDelete && (
             <button onClick={action(onDelete)} className="w-full flex items-center gap-4 px-5 py-4 active:bg-white/5">
               <span className="text-red-400 text-lg w-6 text-center">✕</span>
@@ -109,5 +120,10 @@ export function TrackContextMenu({
         </button>
       </div>
     </div>
+
+    {showEdit && (
+      <EditTrackModal track={track} onClose={() => { setShowEdit(false); onClose() }} />
+    )}
+    </>
   )
 }

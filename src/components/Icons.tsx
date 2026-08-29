@@ -38,6 +38,10 @@ export const HeartFilledIcon   = (p: IconProps) => <Sym ch={`♥${T}`}   {...p} 
 export const QueueIcon         = (p: IconProps) => <Sym ch="≣"          {...p} />
 export const DragHandleIcon    = (p: IconProps) => <Sym ch="⠿"          {...p} />
 export const ImportIcon        = (p: IconProps) => <Sym ch="↓"          {...p} />
+export const ArtistIcon        = (p: IconProps) => <Sym ch="◉"          {...p} />
+export const AlbumIcon         = (p: IconProps) => <Sym ch="⊙"          {...p} />
+export const EditIcon          = (p: IconProps) => <Sym ch="✎"          {...p} />
+export const CheckIcon         = (p: IconProps) => <Sym ch="✓"          {...p} />
 
 // Three bars at different heights — classic EQ icon
 export function EQIcon({ size = 24, className = '' }: IconProps) {

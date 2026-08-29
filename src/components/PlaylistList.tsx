@@ -14,7 +14,15 @@ interface Props {
 async function loadTracks(playlistId: number): Promise<Track[]> {
   const pts = await db.playlistTracks.where('playlistId').equals(playlistId).sortBy('position')
   const tracks = await db.tracks.bulkGet(pts.map(pt => pt.trackId))
-  return tracks.filter((t): t is Track => t !== undefined)
+  const covers = await db.trackCovers.bulkGet(pts.map(pt => pt.trackId))
+  const result: Track[] = []
+  for (let i = 0; i < tracks.length; i++) {
+    const t = tracks[i]
+    if (t !== undefined) {
+      result.push({ ...t, coverBlob: covers[i]?.coverBlob ?? t.coverBlob ?? null })
+    }
+  }
+  return result
 }
 
 function PlaylistContextMenu({

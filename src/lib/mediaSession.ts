@@ -39,6 +39,9 @@ export function updateMediaSession(
   navigator.mediaSession.setActionHandler('seekto', (details) => {
     if (details.seekTime != null) handlers.seekTo(details.seekTime)
   })
+  // Intercept stop so the browser doesn't clear the session — treat it as pause
+  // so the user can still resume from the lock screen afterward.
+  navigator.mediaSession.setActionHandler('stop', handlers.pause)
 }
 
 export function clearMediaSession() {

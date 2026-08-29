@@ -25,6 +25,7 @@ interface Props {
   onJumpTo: (index: number) => void
   onRemoveFromQueue: (index: number) => void
   onReorderQueue: (from: number, to: number) => void
+  onSetSpeed: (speed: number) => void
 }
 
 function formatTime(s: number) {
@@ -34,21 +35,32 @@ function formatTime(s: number) {
   return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
+
 export function NowPlaying({
   state, visible, onTogglePlay, onNext, onPrev, onSeek,
   onToggleShuffle, onCycleRepeat, onClose,
-  onJumpTo, onRemoveFromQueue, onReorderQueue,
+  onJumpTo, onRemoveFromQueue, onReorderQueue, onSetSpeed,
 }: Props) {
-  const { currentTrack, playing, position, duration, shuffle, repeat } = state
+  const { currentTrack, playing, position, duration, shuffle, repeat, speed } = state
+
+  // Live cover — reacts when fixCovers populates trackCovers after startup
+  const coverBlob = (useLiveQuery(
+    () => currentTrack?.id != null
+      ? db.trackCovers.get(currentTrack.id).then(tc => (tc?.coverBlob ?? currentTrack.coverBlob ?? null) as Blob | null)
+      : Promise.resolve(null as Blob | null),
+    [currentTrack?.id],
+    null as Blob | null
+  ) ?? null) as Blob | null
 
   // Blurred background URL
   const [bgUrl, setBgUrl] = useState<string | null>(null)
   useEffect(() => {
-    if (!currentTrack?.coverBlob) { setBgUrl(null); return }
-    const url = URL.createObjectURL(currentTrack.coverBlob)
+    if (!coverBlob) { setBgUrl(null); return }
+    const url = URL.createObjectURL(coverBlob)
     setBgUrl(url)
     return () => URL.revokeObjectURL(url)
-  }, [currentTrack?.coverBlob])
+  }, [coverBlob])
 
   // Seek bar
   const barRef = useRef<HTMLDivElement>(null)
@@ -194,6 +206,16 @@ export function NowPlaying({
           <p className="text-xs font-semibold text-white/60 uppercase tracking-widest">Now Playing</p>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => {
+                const idx = SPEEDS.indexOf(speed)
+                onSetSpeed(SPEEDS[(idx + 1) % SPEEDS.length])
+              }}
+              className={`h-9 px-2.5 flex items-center justify-center rounded-full transition-all active:opacity-50 text-xs font-bold tabular-nums ${speed !== 1 ? 'bg-white/20 text-white' : 'bg-white/10 text-white/70'}`}
+              aria-label="Playback speed"
+            >
+              {speed === 1 ? '1×' : `${speed}×`}
+            </button>
+            <button
               onClick={() => { setShowEQ(q => !q); setShowQueue(false) }}
               className={`w-9 h-9 flex items-center justify-center rounded-full transition-all active:opacity-50 ${showEQ ? 'bg-white/20 text-white' : 'bg-white/10 text-white/70'}`}
               aria-label="Equalizer"
@@ -210,14 +232,23 @@ export function NowPlaying({
           </div>
         </div>
 
-        {/* Cover art */}
-        <div className="flex-1 flex items-center justify-center px-8 py-2">
-          <CoverArt
-            blob={currentTrack.coverBlob}
-            fluid
-            className="rounded-2xl shadow-2xl w-full"
-            style={{ maxWidth: 320 }}
-          />
+        {/* Cover art — tap to toggle queue */}
+        <div
+          className="flex-1 flex items-center justify-center px-8 py-2 cursor-pointer"
+          onClick={() => { setShowQueue(q => !q); setShowEQ(false) }}
+        >
+          <div className="relative w-full" style={{ maxWidth: 320 }}>
+            <CoverArt
+              blob={coverBlob}
+              fluid
+              className={`rounded-2xl shadow-2xl w-full transition-opacity duration-200 ${showQueue ? 'opacity-30' : 'opacity-100'}`}
+            />
+            {showQueue && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-white text-sm font-semibold opacity-70">Tap to close queue</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Track info + like */}

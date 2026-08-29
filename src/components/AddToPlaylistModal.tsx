@@ -3,11 +3,11 @@ import { usePlaylists, createPlaylist, addTrackToPlaylist } from '../hooks/usePl
 import { XIcon, PlusIcon } from './Icons'
 
 interface Props {
-  trackId: number
+  trackIds: number[]
   onClose: () => void
 }
 
-export function AddToPlaylistModal({ trackId, onClose }: Props) {
+export function AddToPlaylistModal({ trackIds, onClose }: Props) {
   const playlists = usePlaylists()
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
@@ -29,7 +29,7 @@ export function AddToPlaylistModal({ trackId, onClose }: Props) {
     if (processingIds.current.has(playlistId)) return
     processingIds.current.add(playlistId)
     try {
-      await addTrackToPlaylist(playlistId, trackId)
+      for (const id of trackIds) await addTrackToPlaylist(playlistId, id)
       setAdded(prev => [...prev, playlistId])
     } finally {
       processingIds.current.delete(playlistId)
@@ -42,7 +42,7 @@ export function AddToPlaylistModal({ trackId, onClose }: Props) {
     setCreating(true)
     try {
       const id = await createPlaylist(name)
-      await addTrackToPlaylist(id, trackId)
+      for (const tid of trackIds) await addTrackToPlaylist(id, tid)
       setAdded(prev => [...prev, id])
       setNewName('')
     } finally {

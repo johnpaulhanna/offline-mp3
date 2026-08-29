@@ -78,7 +78,21 @@ export function ensureEQConnected() {
   }
 }
 
-// Call before audio.play() — iOS suspends AudioContext until user gesture
+// Synchronously release the AudioContext so the audio element reverts to the
+// default output path. Called before audio.play() in background contexts where
+// we cannot await ctx.resume() without losing iOS's user gesture propagation.
+export function releaseEQ() {
+  if (!ctx) return
+  try { ctx.close() } catch {}
+  ctx = null
+  connected = false
+  bassNode = null
+  midNode = null
+  trebleNode = null
+}
+
+// Called before audio.play() in foreground contexts — tries to resume the
+// suspended AudioContext. Fire-and-forget; do NOT await this before play().
 export function resumeEQ() {
   ctx?.resume().catch(() => {})
 }

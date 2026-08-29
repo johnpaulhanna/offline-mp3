@@ -1,6 +1,6 @@
-import { MusicNoteIcon, PlaylistIcon } from './Icons'
+import { MusicNoteIcon, PlaylistIcon, ArtistIcon, AlbumIcon } from './Icons'
 
-export type Tab = 'songs' | 'playlists'
+export type Tab = 'songs' | 'artists' | 'albums' | 'playlists'
 
 interface Props {
   active: Tab
@@ -16,6 +16,8 @@ export function TabBar({ active, onChange }: Props) {
       <div className="flex">
         {([
           { id: 'songs', label: 'Songs', Icon: MusicNoteIcon },
+          { id: 'artists', label: 'Artists', Icon: ArtistIcon },
+          { id: 'albums', label: 'Albums', Icon: AlbumIcon },
           { id: 'playlists', label: 'Playlists', Icon: PlaylistIcon },
         ] as const).map(({ id, label, Icon }) => (
           <button

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { usePlayer } from './hooks/usePlayer'
 import { Library } from './components/Library'
@@ -8,10 +8,14 @@ import { ImportButton } from './components/ImportButton'
 import { TabBar, type Tab } from './components/TabBar'
 import { PlaylistList } from './components/PlaylistList'
 import { PlaylistDetail } from './components/PlaylistDetail'
+import { ArtistsView } from './components/ArtistsView'
+import { AlbumsView } from './components/AlbumsView'
+import { fixCoversIfNeeded } from './lib/fixCovers'
+import { useState } from 'react'
 import type { Track, Playlist } from './db'
 
 export default function App() {
-  const { state, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat, reorderQueue, removeFromQueue, jumpTo } = usePlayer()
+  const { state, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat, reorderQueue, removeFromQueue, jumpTo, setSpeed } = usePlayer()
   const [showNowPlaying, setShowNowPlaying] = useState(false)
   const [tab, setTab] = useState<Tab>('songs')
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null)
@@ -35,6 +39,12 @@ export default function App() {
     request()
     window.addEventListener('pointerdown', request, { once: true })
     return () => window.removeEventListener('pointerdown', request)
+  }, [])
+
+  // Re-extract covers for existing tracks into the new trackCovers table
+  useEffect(() => {
+    const t = setTimeout(() => fixCoversIfNeeded(), 3000)
+    return () => clearTimeout(t)
   }, [])
 
   const handlePlay = (tracks: Track[], index: number) => {
@@ -79,13 +89,33 @@ export default function App() {
         <h1 className="text-xl font-bold tracking-tight">
           {tab === 'playlists' && selectedPlaylist ? selectedPlaylist.name : 'Music'}
         </h1>
-        {tab === 'songs' && <ImportButton />}
+        {(tab === 'songs') && <ImportButton />}
       </div>
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {tab === 'songs' && (
           <Library
+            onPlay={handlePlay}
+            onPlayAndOpen={handlePlayAndOpen}
+            onPlayNext={playNext}
+            onAddToQueue={addToQueue}
+            currentTrackId={state.currentTrack?.id}
+            playing={state.playing}
+          />
+        )}
+        {tab === 'artists' && (
+          <ArtistsView
+            onPlay={handlePlay}
+            onPlayAndOpen={handlePlayAndOpen}
+            onPlayNext={playNext}
+            onAddToQueue={addToQueue}
+            currentTrackId={state.currentTrack?.id}
+            playing={state.playing}
+          />
+        )}
+        {tab === 'albums' && (
+          <AlbumsView
             onPlay={handlePlay}
             onPlayAndOpen={handlePlayAndOpen}
             onPlayNext={playNext}
@@ -144,6 +174,7 @@ export default function App() {
           onJumpTo={jumpTo}
           onRemoveFromQueue={removeFromQueue}
           onReorderQueue={reorderQueue}
+          onSetSpeed={setSpeed}
         />
       )}
     </div>

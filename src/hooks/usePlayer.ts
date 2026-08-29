@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
-import type { Track } from '../db'
+import { db, type Track } from '../db'
 import { updateMediaSession } from '../lib/mediaSession'
-import { setAudioElement, resumeEQ } from '../lib/audioEQ'
+import { setAudioElement, resumeEQ, releaseEQ } from '../lib/audioEQ'
 
 export type RepeatMode = 'none' | 'all' | 'one'
 
@@ -14,11 +14,27 @@ export interface PlayerState {
   duration: number
   shuffle: boolean
   repeat: RepeatMode
+  speed: number
+}
+
+const SESSION_KEY = 'player-session'
+
+interface SavedSession {
+  queueIds: number[]
+  queueIndex: number
+  position: number
+  shuffle: boolean
+  repeat: RepeatMode
+  speed: number
 }
 
 export function usePlayer() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const objectUrlRef = useRef<string | null>(null)
+  const pendingSeekRef = useRef<number | null>(null)
+  const advanceRef = useRef<() => void>(() => {})
+  const lastPositionRef = useRef(0)
+
   const [state, setState] = useState<PlayerState>({
     currentTrack: null,
     queue: [],
@@ -28,10 +44,34 @@ export function usePlayer() {
     duration: 0,
     shuffle: localStorage.getItem('shuffle') === 'true',
     repeat: 'none',
+    speed: 1,
   })
 
-  // Track last-reported position to throttle timeupdate re-renders
-  const lastPositionRef = useRef(0)
+  // Defined before effects so restore effect can call it directly
+  const loadTrack = useCallback(async (track: Track, autoPlay = true) => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current)
+      objectUrlRef.current = null
+    }
+
+    const fileBlob = track.id
+      ? ((await db.trackFiles.get(track.id))?.fileBlob ?? track.fileBlob)
+      : track.fileBlob
+    if (!fileBlob) return
+
+    const url = URL.createObjectURL(fileBlob)
+    objectUrlRef.current = url
+    audio.src = url
+    audio.load()
+
+    if (autoPlay) {
+      resumeEQ()
+      audio.play().catch(() => {})
+    }
+  }, [])
 
   // Init audio element once
   useEffect(() => {
@@ -54,51 +94,98 @@ export function usePlayer() {
     const onDurationChange = () => setState(s => ({ ...s, duration: audio.duration || 0 }))
     const onPlay = () => setState(s => ({ ...s, playing: true }))
     const onPause = () => setState(s => ({ ...s, playing: false }))
-    const onEnded = () => {
-      // advance handled below via state snapshot via ref
-      advanceRef.current()
+    const onEnded = () => advanceRef.current()
+    const onLoadedMetadata = () => {
+      if (pendingSeekRef.current !== null) {
+        audio.currentTime = Math.min(pendingSeekRef.current, Math.max(0, audio.duration - 0.5))
+        pendingSeekRef.current = null
+      }
+    }
+
+    // Release EQ whenever the page goes hidden so ctx.close() has time to
+    // complete long before the user might press play from the lock screen.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') releaseEQ()
     }
 
     audio.addEventListener('timeupdate', onTimeUpdate)
     audio.addEventListener('durationchange', onDurationChange)
+    audio.addEventListener('loadedmetadata', onLoadedMetadata)
     audio.addEventListener('play', onPlay)
     audio.addEventListener('pause', onPause)
     audio.addEventListener('ended', onEnded)
+    document.addEventListener('visibilitychange', onVisibilityChange)
 
     return () => {
       if (rafPending !== null) cancelAnimationFrame(rafPending)
       audio.removeEventListener('timeupdate', onTimeUpdate)
       audio.removeEventListener('durationchange', onDurationChange)
+      audio.removeEventListener('loadedmetadata', onLoadedMetadata)
       audio.removeEventListener('play', onPlay)
       audio.removeEventListener('pause', onPause)
       audio.removeEventListener('ended', onEnded)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       audio.pause()
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
     }
   }, [])
 
-  // Keep a ref to advance so the 'ended' listener always has fresh state
-  const advanceRef = useRef<() => void>(() => {})
+  // Restore last session on mount — loads track paused at saved position
+  useEffect(() => {
+    const restore = async () => {
+      try {
+        const raw = localStorage.getItem(SESSION_KEY)
+        if (!raw) return
+        const session: SavedSession = JSON.parse(raw)
+        if (!session.queueIds?.length) return
 
-  const loadTrack = useCallback((track: Track, autoPlay = true) => {
-    const audio = audioRef.current
-    if (!audio) return
+        const tracks = await db.tracks.bulkGet(session.queueIds)
+        const covers = await db.trackCovers.bulkGet(session.queueIds)
+        const originalId = session.queueIds[session.queueIndex]
 
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current)
-      objectUrlRef.current = null
+        const validTracks: Track[] = []
+        for (let i = 0; i < tracks.length; i++) {
+          const t = tracks[i]
+          if (t) validTracks.push({ ...t, coverBlob: covers[i]?.coverBlob ?? t.coverBlob ?? null })
+        }
+        if (!validTracks.length) return
+
+        const idx = Math.max(0, validTracks.findIndex(t => t.id === originalId))
+        const track = validTracks[idx]
+
+        if (session.position > 2) pendingSeekRef.current = session.position
+
+        await loadTrack(track, false)
+
+        setState(s => ({
+          ...s,
+          queue: validTracks,
+          queueIndex: idx,
+          currentTrack: track,
+          shuffle: session.shuffle ?? s.shuffle,
+          repeat: (session.repeat as RepeatMode) ?? s.repeat,
+          speed: session.speed ?? 1,
+        }))
+      } catch { /* ignore corrupt saved state */ }
     }
+    restore()
+  }, [loadTrack])
 
-    const url = URL.createObjectURL(track.fileBlob)
-    objectUrlRef.current = url
-    audio.src = url
-    audio.load()
-
-    if (autoPlay) {
-      resumeEQ()
-      audio.play().catch(() => {})
-    }
-  }, [])
+  // Save session whenever relevant state changes
+  useEffect(() => {
+    if (!state.currentTrack?.id) return
+    try {
+      const session: SavedSession = {
+        queueIds: state.queue.map(t => t.id!).filter(Boolean),
+        queueIndex: state.queueIndex,
+        position: state.position,
+        shuffle: state.shuffle,
+        repeat: state.repeat,
+        speed: state.speed,
+      }
+      localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+    } catch { /* ignore quota errors */ }
+  }, [state.currentTrack?.id, state.queue, state.queueIndex, state.position, state.shuffle, state.repeat, state.speed])
 
   const playQueue = useCallback((tracks: Track[], startIndex: number) => {
     setState(s => ({
@@ -111,12 +198,22 @@ export function usePlayer() {
   }, [loadTrack])
 
   const play = useCallback(() => {
-    resumeEQ()
+    // Must stay synchronous — iOS loses the Media Session user gesture context
+    // across await boundaries, causing audio.play() to silently fail.
+    if (document.visibilityState === 'hidden') {
+      releaseEQ() // synchronously free AudioContext so audio routes to speakers
+    } else {
+      resumeEQ() // fire-and-forget resume in foreground (no await)
+    }
     audioRef.current?.play().catch(() => {})
   }, [])
 
   const pause = useCallback(() => {
     audioRef.current?.pause()
+    // Release the AudioContext now, while we have time before the user presses
+    // play again. ctx.close() is async at the native level — doing it here
+    // (seconds before play) ensures it's fully closed by the time play() runs.
+    if (document.visibilityState === 'hidden') releaseEQ()
   }, [])
 
   const togglePlay = useCallback(() => {
@@ -247,7 +344,16 @@ export function usePlayer() {
     })
   }, [])
 
-  // Wire advance logic, which needs fresh state
+  const setSpeed = useCallback((speed: number) => {
+    setState(s => ({ ...s, speed }))
+    if (audioRef.current) audioRef.current.playbackRate = speed
+  }, [])
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = state.speed
+  }, [state.speed])
+
+  // Wire advance logic — runs every render so it always captures fresh state
   useEffect(() => {
     advanceRef.current = () => {
       setState(s => {
@@ -285,5 +391,5 @@ export function usePlayer() {
     navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused'
   }, [state.playing])
 
-  return { state, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat, reorderQueue, removeFromQueue, jumpTo }
+  return { state, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat, reorderQueue, removeFromQueue, jumpTo, setSpeed }
 }

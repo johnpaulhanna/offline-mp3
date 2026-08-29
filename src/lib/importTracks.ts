@@ -1,11 +1,18 @@
 import { parseBlob } from 'music-metadata'
 import { db, type Track } from '../db'
 
-export async function importFiles(files: FileList, playlistId?: number): Promise<number> {
+export async function importFiles(
+  files: FileList,
+  playlistId?: number,
+  onProgress?: (done: number, total: number) => void,
+): Promise<number> {
   let imported = 0
   const importedIds: number[] = []
+  const fileArray = Array.from(files)
+  const total = fileArray.length
 
-  for (const file of Array.from(files)) {
+  for (let i = 0; i < fileArray.length; i++) {
+    const file = fileArray[i]
     try {
       const metadata = await parseBlob(file)
       const { common, format } = metadata
@@ -29,17 +36,20 @@ export async function importFiles(files: FileList, playlistId?: number): Promise
         artist,
         album,
         duration,
-        fileBlob: file,
-        coverBlob,
         addedAt: Date.now(),
       }
 
       const id = await db.tracks.add(track)
+      await db.trackFiles.put({ id: id as number, fileBlob: file })
+      if (coverBlob) {
+        await db.trackCovers.put({ id: id as number, coverBlob })
+      }
       importedIds.push(id as number)
       imported++
     } catch (err) {
       console.error(`Failed to import ${file.name}:`, err)
     }
+    onProgress?.(i + 1, total)
   }
 
   if (playlistId !== undefined && importedIds.length > 0) {

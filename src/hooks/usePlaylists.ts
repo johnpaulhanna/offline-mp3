@@ -11,12 +11,16 @@ export function usePlaylistTracks(playlistId: number) {
       .where('playlistId').equals(playlistId)
       .sortBy('position')
     const tracks = await db.tracks.bulkGet(pts.map(pt => pt.trackId))
+    const covers = await db.trackCovers.bulkGet(pts.map(pt => pt.trackId))
     const pairs = pts
-      .map((pt, i) => ({ pt, track: tracks[i] }))
-      .filter((p): p is { pt: typeof pts[0]; track: Track } => p.track !== undefined)
+      .map((pt, i) => ({ pt, track: tracks[i], cover: covers[i] }))
+      .filter((p): p is { pt: typeof pts[0]; track: Track; cover: typeof covers[0] } => p.track !== undefined)
     return {
       pts: pairs.map(p => p.pt),
-      tracks: pairs.map(p => p.track),
+      tracks: pairs.map(p => ({
+        ...p.track,
+        coverBlob: p.cover?.coverBlob ?? p.track.coverBlob ?? null,
+      })),
     }
   }, [playlistId])
 }

@@ -1,4 +1,6 @@
+import { useLiveQuery } from 'dexie-react-hooks'
 import type { PlayerState } from '../hooks/usePlayer'
+import { db } from '../db'
 import { CoverArt } from './CoverArt'
 import { PlayIcon, PauseIcon, NextIcon } from './Icons'
 
@@ -11,6 +13,14 @@ interface Props {
 
 export function MiniPlayer({ state, onTogglePlay, onNext, onExpand }: Props) {
   const { currentTrack, playing, position, duration } = state
+  const coverBlob = (useLiveQuery(
+    () => currentTrack?.id != null
+      ? db.trackCovers.get(currentTrack.id).then(tc => (tc?.coverBlob ?? currentTrack.coverBlob ?? null) as Blob | null)
+      : Promise.resolve(null as Blob | null),
+    [currentTrack?.id],
+    null as Blob | null
+  ) ?? null) as Blob | null
+
   if (!currentTrack) return null
 
   const pct = duration > 0 ? (position / duration) * 100 : 0
@@ -25,7 +35,7 @@ export function MiniPlayer({ state, onTogglePlay, onNext, onExpand }: Props) {
 
         <div className="flex items-center gap-3 px-4 py-3">
           <div className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer" onClick={onExpand}>
-            <CoverArt blob={currentTrack.coverBlob} size={42} className="rounded-xl" />
+            <CoverArt blob={coverBlob} size={42} className="rounded-xl" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-white truncate leading-tight">{currentTrack.title}</p>
               <p className="text-xs text-gray-400 truncate mt-0.5">{currentTrack.artist}</p>

@@ -9,6 +9,9 @@ import { TrackContextMenu } from './TrackContextMenu'
 import { AddToPlaylistModal } from './AddToPlaylistModal'
 import { AddSongsModal } from './AddSongsModal'
 
+type DisplaySort = 'alpha' | 'newest' | 'oldest'
+const SORT_LABELS: Record<DisplaySort, string> = { alpha: 'A-Z', newest: 'Newest', oldest: 'Oldest' }
+
 interface Props {
   playlist: Playlist
   currentTrackId?: number
@@ -31,6 +34,15 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
   const importInputRef = useRef<HTMLInputElement>(null)
   const [importing, setImporting] = useState(false)
   const [showAddSongs, setShowAddSongs] = useState(false)
+
+  // Search + sort
+  const [search, setSearch] = useState('')
+  const [sort, setSort] = useState<DisplaySort>('alpha')
+  const [showSortMenu, setShowSortMenu] = useState(false)
+
+  // Multi-select
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState(new Set<number>())
 
   useEffect(() => { setLocalCover(playlist.coverBlob ?? null) }, [playlist.coverBlob])
 
@@ -66,8 +78,59 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
     return () => URL.revokeObjectURL(url)
   }, [bgBlob])
 
+  // Sorted + filtered track/pt pairs
+  const displayPairs = useMemo(() => {
+    const pairs = tracks.map((t, i) => ({ track: t, pt: pts[i] }))
+
+    let sorted: typeof pairs
+    if (sort === 'alpha') {
+      sorted = [...pairs].sort((a, b) => a.track.title.toLowerCase().localeCompare(b.track.title.toLowerCase()))
+    } else if (sort === 'newest') {
+      sorted = [...pairs].sort((a, b) => b.track.addedAt - a.track.addedAt)
+    } else {
+      sorted = [...pairs].sort((a, b) => a.track.addedAt - b.track.addedAt)
+    }
+
+    if (!search.trim()) return sorted
+    const q = search.toLowerCase()
+    return sorted.filter(({ track }) =>
+      [track.title, track.artist, track.album].some(f => f?.toLowerCase().includes(q))
+    )
+  }, [tracks, pts, sort, search])
+
+  const toggleSelect = (id: number) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelected(new Set())
+  }
+
+  const handleBulkAddToQueue = () => {
+    const selectedTracks = displayPairs.filter(p => selected.has(p.track.id!)).map(p => p.track)
+    for (const t of selectedTracks) onAddToQueue(t)
+    exitSelectMode()
+  }
+
+  const handleBulkRemove = async () => {
+    const selectedPtIds = displayPairs
+      .filter(p => selected.has(p.track.id!) && p.pt?.id)
+      .map(p => p.pt!.id!)
+    for (const ptId of selectedPtIds) {
+      await removeFromPlaylist(ptId)
+    }
+    exitSelectMode()
+  }
+
   const [contextTrack, setContextTrack] = useState<{ track: Track; idx: number; ptId: number } | null>(null)
   const [addingTrackId, setAddingTrackId] = useState<number | null>(null)
+  const [addingSelectedToPlaylist, setAddingSelectedToPlaylist] = useState(false)
 
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpStart = useRef<{ x: number; y: number } | null>(null)
@@ -79,7 +142,11 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
     lpTimer.current = setTimeout(() => {
       lpFired.current = true
       if ('vibrate' in navigator) (navigator as Navigator & { vibrate: (d: number) => void }).vibrate(40)
-      setContextTrack({ track, idx, ptId })
+      if (selectMode) {
+        toggleSelect(track.id!)
+      } else {
+        setContextTrack({ track, idx, ptId })
+      }
     }, 500)
   }
 
@@ -131,56 +198,78 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
           )}
         </div>
 
-        {/* Header: back + import + add songs */}
+        {/* Header */}
         <div className="relative flex items-center gap-2 px-4 py-3 shrink-0">
-          <button
-            onClick={onBack}
-            className="text-white w-9 h-9 flex items-center justify-center active:opacity-50 bg-white/10 rounded-full"
-          >
-            <ChevronLeftIcon size={20} />
-          </button>
-          <p className="text-white/50 text-sm font-medium flex-1 truncate">Library</p>
-          <button
-            onClick={() => importInputRef.current?.click()}
-            disabled={importing}
-            className="w-9 h-9 flex items-center justify-center bg-white/10 rounded-full active:bg-white/20 transition-colors disabled:opacity-40"
-            aria-label="Import files to playlist"
-          >
-            <ImportIcon size={18} />
-          </button>
-          <button
-            onClick={() => setShowAddSongs(true)}
-            className="w-9 h-9 flex items-center justify-center bg-white/10 rounded-full active:bg-white/20 transition-colors"
-            aria-label="Add songs from library"
-          >
-            <PlusIcon size={18} />
-          </button>
+          {selectMode ? (
+            <>
+              <button
+                onClick={exitSelectMode}
+                className="text-[#fc3c44] text-sm font-medium active:opacity-50"
+              >
+                Cancel
+              </button>
+              <span className="text-white/60 text-sm flex-1 text-center">{selected.size} selected</span>
+              <button
+                onClick={() => setSelected(new Set(displayPairs.map(p => p.track.id!)))}
+                className="text-[#fc3c44] text-sm font-medium active:opacity-50"
+              >
+                Select All
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={onBack}
+                className="text-white w-9 h-9 flex items-center justify-center active:opacity-50 bg-white/10 rounded-full"
+              >
+                <ChevronLeftIcon size={20} />
+              </button>
+              <p className="text-white/50 text-sm font-medium flex-1 truncate">Library</p>
+              <button
+                onClick={() => importInputRef.current?.click()}
+                disabled={importing}
+                className="w-9 h-9 flex items-center justify-center bg-white/10 rounded-full active:bg-white/20 transition-colors disabled:opacity-40"
+                aria-label="Import files to playlist"
+              >
+                <ImportIcon size={18} />
+              </button>
+              <button
+                onClick={() => setShowAddSongs(true)}
+                className="w-9 h-9 flex items-center justify-center bg-white/10 rounded-full active:bg-white/20 transition-colors"
+                aria-label="Add songs from library"
+              >
+                <PlusIcon size={18} />
+              </button>
+            </>
+          )}
         </div>
 
         {/* Scrollable content */}
         <div className="overflow-y-auto flex-1 relative" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
 
-          {/* Hero */}
-          <div className="flex flex-col items-center px-8 pt-4 pb-6">
-            <div
-              className="relative cursor-pointer active:opacity-80 transition-opacity"
-              onClick={() => coverInputRef.current?.click()}
-            >
-              <CoverArt blob={localCover} size={180} className="rounded-2xl shadow-2xl" />
-              <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm border border-white/20 rounded-full px-2.5 py-1 flex items-center gap-1">
-                <span className="text-white text-[10px] font-semibold tracking-wide">EDIT</span>
+          {/* Hero — hidden in select mode */}
+          {!selectMode && (
+            <div className="flex flex-col items-center px-8 pt-4 pb-6">
+              <div
+                className="relative cursor-pointer active:opacity-80 transition-opacity"
+                onClick={() => coverInputRef.current?.click()}
+              >
+                <CoverArt blob={localCover} size={180} className="rounded-2xl shadow-2xl" />
+                <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm border border-white/20 rounded-full px-2.5 py-1 flex items-center gap-1">
+                  <span className="text-white text-[10px] font-semibold tracking-wide">EDIT</span>
+                </div>
               </div>
+
+              <p className="text-white font-bold text-[22px] mt-4 text-center leading-tight">{playlist.name}</p>
+              <p className="text-white/40 text-sm mt-1.5">
+                {tracks.length} {tracks.length === 1 ? 'song' : 'songs'}
+              </p>
             </div>
+          )}
 
-            <p className="text-white font-bold text-[22px] mt-4 text-center leading-tight">{playlist.name}</p>
-            <p className="text-white/40 text-sm mt-1.5">
-              {tracks.length} {tracks.length === 1 ? 'song' : 'songs'}
-            </p>
-          </div>
-
-          {/* Play / Shuffle */}
-          {tracks.length > 0 && (
-            <div className="flex gap-3 px-5 pb-6">
+          {/* Play / Shuffle — hidden in select mode */}
+          {!selectMode && tracks.length > 0 && (
+            <div className="flex gap-3 px-5 pb-4">
               <button
                 onClick={() => onPlayAll(tracks, 0)}
                 className="flex-1 flex items-center justify-center gap-2 bg-white text-black text-sm font-bold py-3 rounded-2xl active:scale-95 transition-transform"
@@ -196,6 +285,53 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
             </div>
           )}
 
+          {/* Search */}
+          <div className="px-4 pb-2 shrink-0">
+            <input
+              type="search"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search songs, artists, albums…"
+              className="w-full bg-white/[0.08] text-white placeholder-gray-500 text-sm px-4 py-2.5 rounded-2xl outline-none focus:bg-white/12"
+            />
+          </div>
+
+          {/* Sort menu + select button */}
+          {!selectMode && (
+            <div className="flex items-center gap-1 px-4 pb-3 shrink-0">
+              <div className="relative flex-1">
+                <button
+                  onClick={() => setShowSortMenu(p => !p)}
+                  className="text-xs px-3 py-1.5 rounded-full font-medium bg-white/15 text-white flex items-center gap-1"
+                >
+                  {SORT_LABELS[sort]}
+                  <span className="text-white/50 text-[10px]">▾</span>
+                </button>
+                {showSortMenu && (
+                  <div className="absolute top-full left-0 mt-1 bg-[#1c1c1e] border border-white/10 rounded-2xl overflow-hidden shadow-2xl z-50 min-w-[140px]">
+                    {(['alpha', 'newest', 'oldest'] as DisplaySort[]).map(opt => (
+                      <button
+                        key={opt}
+                        onClick={() => { setSort(opt); setShowSortMenu(false) }}
+                        className={`w-full text-left px-4 py-3 text-sm border-b border-white/[0.06] last:border-0 active:bg-white/10 ${
+                          sort === opt ? 'text-[#fc3c44] font-semibold' : 'text-white'
+                        }`}
+                      >
+                        {SORT_LABELS[opt]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setSelectMode(true)}
+                className="text-xs px-3 py-1.5 rounded-full text-white/35 active:bg-white/10 font-medium"
+              >
+                Select
+              </button>
+            </div>
+          )}
+
           {/* Track list */}
           {tracks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3 px-8 text-center">
@@ -205,32 +341,55 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
                 <span className="text-white font-medium">↓</span> to import files directly.
               </p>
             </div>
+          ) : displayPairs.length === 0 ? (
+            <p className="text-gray-500 text-sm text-center mt-12">No results for "{search}"</p>
           ) : (
             <div className="mx-4 rounded-2xl overflow-hidden bg-white/[0.05]">
-              {tracks.map((track, idx) => {
+              {displayPairs.map(({ track, pt }, idx) => {
                 const isActive = track.id === currentTrackId
-                const pt = pts[idx]
+                const isSelected = selected.has(track.id!)
                 return (
                   <div
                     key={pt?.id ?? idx}
-                    onClick={() => { if (!lpFired.current) onPlay(tracks, idx) }}
+                    onClick={() => {
+                      if (lpFired.current) return
+                      if (selectMode) {
+                        toggleSelect(track.id!)
+                      } else {
+                        onPlay(displayPairs.map(p => p.track), idx)
+                      }
+                    }}
                     onPointerDown={e => startLongPress(e, track, idx, pt?.id ?? 0)}
                     onPointerUp={cancelLongPress}
                     onPointerCancel={cancelLongPress}
                     onPointerMove={moveLongPress}
-                    className={`flex items-center gap-3 px-4 py-3 cursor-pointer select-none border-b border-white/[0.05] last:border-0 transition-colors ${isActive ? 'bg-white/[0.08]' : 'active:bg-white/[0.08]'}`}
+                    className={`flex items-center gap-3 px-4 py-3 cursor-pointer select-none border-b border-white/[0.05] last:border-0 transition-colors ${
+                      isSelected ? 'bg-[#fc3c44]/20' : isActive ? 'bg-white/[0.08]' : 'active:bg-white/[0.08]'
+                    }`}
                   >
-                    <CoverArt blob={track.coverBlob} size={44} className="rounded-xl" />
+                    {selectMode ? (
+                      <div
+                        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                          isSelected ? 'border-[#fc3c44] bg-[#fc3c44]' : 'border-white/30'
+                        }`}
+                      >
+                        {isSelected && <span className="text-white text-[10px] font-black leading-none">✓</span>}
+                      </div>
+                    ) : (
+                      <CoverArt blob={track.coverBlob} size={44} className="rounded-xl" />
+                    )}
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-semibold truncate leading-snug ${isActive ? 'text-[#fc3c44]' : 'text-white'}`}>
-                        {isActive && playing && (
+                      <p className={`text-sm font-semibold truncate leading-snug ${isActive && !selectMode ? 'text-[#fc3c44]' : 'text-white'}`}>
+                        {isActive && playing && !selectMode && (
                           <span className="inline-block w-2 h-2 rounded-full bg-[#fc3c44] mr-1.5 mb-0.5 animate-pulse" />
                         )}
                         {track.title}
                       </p>
                       <p className="text-xs text-white/40 truncate mt-0.5">{track.artist}</p>
                     </div>
-                    <span className="text-xs text-white/30 shrink-0 tabular-nums">{formatDuration(track.duration)}</span>
+                    {!selectMode && (
+                      <span className="text-xs text-white/30 shrink-0 tabular-nums">{formatDuration(track.duration)}</span>
+                    )}
                   </div>
                 )
               })}
@@ -239,6 +398,32 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
 
           <div className="h-28" />
         </div>
+
+        {/* Select mode action bar */}
+        {selectMode && selected.size > 0 && (
+          <div className="shrink-0 px-4 py-3 border-t border-white/[0.08] bg-black/80 flex flex-col gap-2 relative">
+            <div className="flex gap-2">
+              <button
+                onClick={handleBulkAddToQueue}
+                className="flex-1 bg-white/10 text-white font-semibold py-3 rounded-2xl active:scale-95 transition-transform text-sm"
+              >
+                Add to Queue
+              </button>
+              <button
+                onClick={() => setAddingSelectedToPlaylist(true)}
+                className="flex-1 bg-white/10 text-white font-semibold py-3 rounded-2xl active:scale-95 transition-transform text-sm"
+              >
+                Add to Playlist
+              </button>
+            </div>
+            <button
+              onClick={handleBulkRemove}
+              className="w-full bg-red-600/80 text-white font-semibold py-3 rounded-2xl active:scale-95 transition-transform text-sm"
+            >
+              Remove {selected.size} {selected.size === 1 ? 'Song' : 'Songs'}
+            </button>
+          </div>
+        )}
       </div>
 
       {contextTrack && (
@@ -258,7 +443,14 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
       )}
 
       {addingTrackId != null && (
-        <AddToPlaylistModal trackId={addingTrackId} onClose={() => setAddingTrackId(null)} />
+        <AddToPlaylistModal trackIds={[addingTrackId]} onClose={() => setAddingTrackId(null)} />
+      )}
+
+      {addingSelectedToPlaylist && (
+        <AddToPlaylistModal
+          trackIds={[...selected]}
+          onClose={() => { setAddingSelectedToPlaylist(false); exitSelectMode() }}
+        />
       )}
 
       {showAddSongs && (
