@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { db, type Track } from '../db'
-import { updateMediaSession, clearMediaSession } from '../lib/mediaSession'
+import { updateMediaSession, clearMediaSession, setPlaybackState } from '../lib/mediaSession'
 import { setAudioElement, resumeEQ, releaseEQ } from '../lib/audioEQ'
 import {
   identityOrder,
@@ -161,8 +161,16 @@ export function usePlayer() {
       })
     }
     const onDurationChange = () => setState(s => ({ ...s, duration: audio.duration || 0 }))
-    const onPlay = () => setState(s => ({ ...s, playing: true }))
-    const onPause = () => setState(s => ({ ...s, playing: false }))
+    // Mirror into Media Session synchronously. These listeners run even when the
+    // page is suspended and React never gets to commit a render.
+    const onPlay = () => {
+      setPlaybackState(true)
+      setState(s => ({ ...s, playing: true }))
+    }
+    const onPause = () => {
+      setPlaybackState(false)
+      setState(s => ({ ...s, playing: false }))
+    }
     const onLoadedMetadata = () => {
       if (pendingSeekRef.current !== null) {
         audio.currentTime = Math.min(pendingSeekRef.current, Math.max(0, audio.duration - 0.5))
@@ -306,10 +314,15 @@ export function usePlayer() {
     } else {
       resumeEQ() // fire-and-forget resume in foreground (no await)
     }
-    audioRef.current?.play().catch(() => {})
+    audioRef.current?.play().catch(() => {
+      // Refused. Say so, or the lock screen keeps claiming we're playing and the
+      // next AirPods tap sends 'pause' into audio that is already paused.
+      setPlaybackState(false)
+    })
   }, [])
 
   const pause = useCallback(() => {
+    setPlaybackState(false)
     audioRef.current?.pause()
     // Release the AudioContext now, while we have time before the user presses
     // play again. ctx.close() is async at the native level — doing it here
@@ -322,8 +335,9 @@ export function usePlayer() {
     if (!audio) return
     if (audio.paused) {
       resumeEQ()
-      audio.play().catch(() => {})
+      audio.play().catch(() => setPlaybackState(false))
     } else {
+      setPlaybackState(false)
       audio.pause()
     }
   }, [])
@@ -487,10 +501,10 @@ export function usePlayer() {
     updateMediaSession(currentTrack, { play, pause, next, prev, seekTo: seek })
   }, [currentTrack, play, pause, next, prev, seek])
 
-  // Sync Media Session playback state
+  // Backstop for state changes with no corresponding media event — reaching the
+  // end of the queue pauses playback without the element firing 'pause'.
   useEffect(() => {
-    if (!('mediaSession' in navigator)) return
-    navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused'
+    setPlaybackState(state.playing)
   }, [state.playing])
 
   return {

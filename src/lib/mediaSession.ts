@@ -44,6 +44,15 @@ export function updateMediaSession(
   navigator.mediaSession.setActionHandler('stop', handlers.pause)
 }
 
+// iOS works out what a single AirPods tap means by reading playbackState: if it
+// believes we are playing, the tap sends 'pause'. So this has to be true at all
+// times, including while the page is suspended in the background — which is why
+// callers set it synchronously rather than letting a React render get to it.
+export function setPlaybackState(playing: boolean) {
+  if (!('mediaSession' in navigator)) return
+  navigator.mediaSession.playbackState = playing ? 'playing' : 'paused'
+}
+
 export function clearMediaSession() {
   if (!('mediaSession' in navigator)) return
   if (coverUrl) {
@@ -51,4 +60,5 @@ export function clearMediaSession() {
     coverUrl = null
   }
   navigator.mediaSession.metadata = null
+  navigator.mediaSession.playbackState = 'none'
 }
