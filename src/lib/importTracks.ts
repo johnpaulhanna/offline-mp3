@@ -2,7 +2,16 @@ import { parseBlob } from 'music-metadata'
 import { db, type Track } from '../db'
 
 // Everything music-metadata can read and Safari can play, not just MP3.
-export const AUDIO_ACCEPT = 'audio/*,.mp3,.m4a,.aac,.flac,.wav,.aiff,.ogg'
+//
+// Spelled out rather than 'audio/*' on purpose: iOS reads a wildcard as "any
+// media" and puts Photo Library and Take Photo in the picker. Naming each type
+// keeps the sheet on Files, where the music actually is.
+export const AUDIO_ACCEPT = [
+  'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/aac',
+  'audio/flac', 'audio/x-flac', 'audio/wav', 'audio/x-wav',
+  'audio/aiff', 'audio/x-aiff', 'audio/ogg',
+  '.mp3', '.m4a', '.aac', '.flac', '.wav', '.aiff', '.ogg',
+].join(',')
 
 export interface ImportResult {
   imported: number

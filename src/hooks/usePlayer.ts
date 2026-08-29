@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { db, type Track } from '../db'
-import { updateMediaSession, clearMediaSession, setPlaybackState } from '../lib/mediaSession'
+import { updateMediaSession, clearMediaSession, setPlaybackState, updatePositionState } from '../lib/mediaSession'
 import { setAudioElement, resumeEQ, releaseEQ } from '../lib/audioEQ'
 import {
   identityOrder,
@@ -67,6 +67,14 @@ function readRepeat(): RepeatMode {
   } catch {
     return 'none' // storage blocked (private browsing)
   }
+}
+
+// audio.load() resets playbackRate to defaultPlaybackRate, so setting only
+// playbackRate silently drops the user's choice on the very next track.
+function applyRate(audio: HTMLAudioElement | null, speed: number) {
+  if (!audio) return
+  audio.defaultPlaybackRate = speed
+  audio.playbackRate = speed
 }
 
 // Move to `orderPos` in `order` and ask the effect to load whatever lands there.
@@ -160,15 +168,21 @@ export function usePlayer() {
         setState(s => ({ ...s, position: t }))
       })
     }
-    const onDurationChange = () => setState(s => ({ ...s, duration: audio.duration || 0 }))
+    const syncPosition = () => updatePositionState(audio.currentTime, audio.duration, audio.playbackRate)
+    const onDurationChange = () => {
+      syncPosition()
+      setState(s => ({ ...s, duration: audio.duration || 0 }))
+    }
     // Mirror into Media Session synchronously. These listeners run even when the
     // page is suspended and React never gets to commit a render.
     const onPlay = () => {
       setPlaybackState(true)
+      syncPosition()
       setState(s => ({ ...s, playing: true }))
     }
     const onPause = () => {
       setPlaybackState(false)
+      syncPosition()
       setState(s => ({ ...s, playing: false }))
     }
     const onLoadedMetadata = () => {
@@ -190,6 +204,8 @@ export function usePlayer() {
     audio.addEventListener('play', onPlay)
     audio.addEventListener('pause', onPause)
     audio.addEventListener('ended', advance)
+    audio.addEventListener('seeked', syncPosition)
+    audio.addEventListener('ratechange', syncPosition)
     document.addEventListener('visibilitychange', onVisibilityChange)
 
     return () => {
@@ -200,6 +216,8 @@ export function usePlayer() {
       audio.removeEventListener('play', onPlay)
       audio.removeEventListener('pause', onPause)
       audio.removeEventListener('ended', advance)
+      audio.removeEventListener('seeked', syncPosition)
+      audio.removeEventListener('ratechange', syncPosition)
       document.removeEventListener('visibilitychange', onVisibilityChange)
       audio.pause()
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
@@ -457,11 +475,11 @@ export function usePlayer() {
 
   const setSpeed = useCallback((speed: number) => {
     setState(s => ({ ...s, speed }))
-    if (audioRef.current) audioRef.current.playbackRate = speed
+    applyRate(audioRef.current, speed)
   }, [])
 
   useEffect(() => {
-    if (audioRef.current) audioRef.current.playbackRate = state.speed
+    applyRate(audioRef.current, state.speed)
   }, [state.speed])
 
   // What plays after the current track, in play order — this is what the queue

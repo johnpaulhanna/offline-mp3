@@ -44,6 +44,22 @@ export function updateMediaSession(
   navigator.mediaSession.setActionHandler('stop', handlers.pause)
 }
 
+// Anchor the lock-screen scrubber. Without this iOS estimates position itself
+// and drifts, and the elapsed time can disagree with the app.
+export function updatePositionState(position: number, duration: number, playbackRate: number) {
+  if (!('mediaSession' in navigator) || !('setPositionState' in navigator.mediaSession)) return
+  if (!isFinite(duration) || duration <= 0) return
+  try {
+    navigator.mediaSession.setPositionState({
+      duration,
+      playbackRate: playbackRate > 0 ? playbackRate : 1,
+      position: Math.max(0, Math.min(position, duration)),
+    })
+  } catch {
+    // Safari throws on inconsistent values; it just falls back to its own estimate
+  }
+}
+
 // iOS works out what a single AirPods tap means by reading playbackState: if it
 // believes we are playing, the tap sends 'pause'. So this has to be true at all
 // times, including while the page is suspended in the background — which is why
@@ -61,4 +77,14 @@ export function clearMediaSession() {
   }
   navigator.mediaSession.metadata = null
   navigator.mediaSession.playbackState = 'none'
+  // Drop the handlers too, or the lock screen keeps offering controls for a
+  // queue that no longer exists.
+  const actions: MediaSessionAction[] = ['play', 'pause', 'nexttrack', 'previoustrack', 'seekto', 'stop']
+  for (const action of actions) {
+    try {
+      navigator.mediaSession.setActionHandler(action, null)
+    } catch {
+      // action unsupported on this browser
+    }
+  }
 }
