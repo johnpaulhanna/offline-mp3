@@ -37,6 +37,7 @@ html, body, #root {
 
 * {
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
   box-sizing: border-box;
   touch-action: manipulation;
   user-select: none;

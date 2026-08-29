@@ -80,15 +80,16 @@ export default function App() {
   return (
     <div className="flex flex-col h-full bg-black text-white" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
 
-      {/* Update banner — shown when a new version is waiting */}
+      {/* Update prompt — stays user-triggered on purpose. A silent auto-update
+          once wiped people's libraries (f1da2c9), so this asks rather than acts. */}
       {needRefresh && (
-        <div className="shrink-0 bg-blue-600 flex items-center justify-between px-4 py-2 text-sm">
-          <span>New version available</span>
+        <div className="shrink-0 mx-3 mt-2 flex items-center justify-between gap-3 rounded-2xl bg-white/[0.08] px-4 py-2.5">
+          <span className="text-[13px] text-white/70">A new version is ready</span>
           <button
             onClick={() => updateServiceWorker(true)}
-            className="font-bold bg-white text-blue-600 px-3 py-1 rounded-full text-xs"
+            className="text-[13px] font-semibold text-[#fc3c44] active:opacity-50 transition-opacity"
           >
-            Update now
+            Update
           </button>
         </div>
       )}

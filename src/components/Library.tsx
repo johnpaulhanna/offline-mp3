@@ -203,14 +203,11 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
           <p className="text-gray-500 text-sm leading-relaxed">
             Tap <span className="text-white font-medium">Add Music</span> to import MP3s from your Files app.
           </p>
-          <p className="text-gray-600 text-xs mt-3">
-            Requires one online load to install, then works fully offline.
-          </p>
         </div>
         {/* Reachable with an empty library — this is the screen someone lands on
             after a reinstall, when restoring is the only thing they want to do. */}
         <div className="w-full max-w-xs">
-          <BackupBar />
+          <BackupBar prominent />
         </div>
       </div>
     )

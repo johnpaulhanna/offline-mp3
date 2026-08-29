@@ -11,7 +11,12 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : 'Something went wrong.'
 }
 
-export function BackupBar() {
+interface Props {
+  /** Real buttons instead of quiet footer text — used on the empty library screen. */
+  prominent?: boolean
+}
+
+export function BackupBar({ prominent = false }: Props) {
   const [busy, setBusy] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const restoreRef = useRef<HTMLInputElement>(null)
@@ -67,24 +72,44 @@ export function BackupBar() {
         onChange={handleRestore}
       />
 
-      <div className="flex gap-2">
-        <button
-          onClick={handleExport}
-          disabled={busy !== null}
-          className="flex-1 flex items-center justify-center gap-2 bg-white/[0.06] text-white/70 text-xs font-semibold py-2.5 rounded-xl active:bg-white/[0.12] disabled:opacity-40 transition-colors"
-        >
-          <ImportIcon size={14} />
-          Back up library
-        </button>
-        <button
-          onClick={() => restoreRef.current?.click()}
-          disabled={busy !== null}
-          className="flex-1 flex items-center justify-center gap-2 bg-white/[0.06] text-white/70 text-xs font-semibold py-2.5 rounded-xl active:bg-white/[0.12] disabled:opacity-40 transition-colors"
-        >
-          <PlusIcon size={14} />
-          Restore backup
-        </button>
-      </div>
+      {prominent ? (
+        <div className="flex gap-2">
+          <button
+            onClick={handleExport}
+            disabled={busy !== null}
+            className="flex-1 flex items-center justify-center gap-2 bg-white/[0.06] text-white/70 text-xs font-semibold py-2.5 rounded-xl active:bg-white/[0.12] disabled:opacity-40 transition-colors"
+          >
+            <ImportIcon size={14} />
+            Back up
+          </button>
+          <button
+            onClick={() => restoreRef.current?.click()}
+            disabled={busy !== null}
+            className="flex-1 flex items-center justify-center gap-2 bg-white/[0.06] text-white/70 text-xs font-semibold py-2.5 rounded-xl active:bg-white/[0.12] disabled:opacity-40 transition-colors"
+          >
+            <PlusIcon size={14} />
+            Restore
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-center gap-4">
+          <button
+            onClick={handleExport}
+            disabled={busy !== null}
+            className="text-[11px] font-medium text-white/30 active:text-white/70 disabled:opacity-40 transition-colors"
+          >
+            Back up
+          </button>
+          <span className="text-white/10 text-[11px]">·</span>
+          <button
+            onClick={() => restoreRef.current?.click()}
+            disabled={busy !== null}
+            className="text-[11px] font-medium text-white/30 active:text-white/70 disabled:opacity-40 transition-colors"
+          >
+            Restore
+          </button>
+        </div>
+      )}
 
       {(busy || message) && (
         <p className="text-center text-[11px] text-gray-500 mt-2 leading-relaxed" role="status">
