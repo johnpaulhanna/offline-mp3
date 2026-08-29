@@ -1,7 +1,8 @@
 import { useRef, useState, useEffect, useMemo } from 'react'
 import { usePlaylistTracks, removeFromPlaylist, updatePlaylistCover } from '../hooks/usePlaylists'
 import { toggleLike } from '../hooks/useTracks'
-import { importFiles } from '../lib/importTracks'
+import { importFiles, AUDIO_ACCEPT } from '../lib/importTracks'
+import { useBlobUrl } from '../hooks/useBlobUrl'
 import type { Playlist, Track } from '../db'
 import { CoverArt } from './CoverArt'
 import { ChevronLeftIcon, PlayIcon, ShuffleIcon, PlusIcon, ImportIcon } from './Icons'
@@ -26,8 +27,9 @@ interface Props {
 
 export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPlayAll, onPlayNext, onAddToQueue, onPlayShuffle, onBack }: Props) {
   const data = usePlaylistTracks(playlist.id!)
-  const tracks = data?.tracks ?? []
-  const pts = data?.pts ?? []
+  // Memoised so the fallbacks don't hand out a fresh array on every render.
+  const tracks = useMemo(() => data?.tracks ?? [], [data])
+  const pts = useMemo(() => data?.pts ?? [], [data])
 
   const [localCover, setLocalCover] = useState<Blob | null>(playlist.coverBlob ?? null)
   const coverInputRef = useRef<HTMLInputElement>(null)
@@ -70,13 +72,7 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
     () => localCover ?? tracks[0]?.coverBlob ?? null,
     [localCover, tracks]
   )
-  const [bgUrl, setBgUrl] = useState<string | null>(null)
-  useEffect(() => {
-    if (!bgBlob) { setBgUrl(null); return }
-    const url = URL.createObjectURL(bgBlob)
-    setBgUrl(url)
-    return () => URL.revokeObjectURL(url)
-  }, [bgBlob])
+  const bgUrl = useBlobUrl(bgBlob)
 
   // Sorted + filtered track/pt pairs
   const displayPairs = useMemo(() => {
@@ -173,7 +169,7 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
     <>
       {/* Hidden file inputs */}
       <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
-      <input ref={importInputRef} type="file" multiple accept="audio/mpeg,audio/mp3,.mp3" className="hidden" onChange={handleImport} />
+      <input ref={importInputRef} type="file" multiple accept={AUDIO_ACCEPT} className="hidden" onChange={handleImport} />
 
       <div className="flex flex-col flex-1 overflow-hidden relative">
         {/* Blurred background */}

@@ -1,39 +1,42 @@
 import { useRef, useState } from 'react'
 import type { Track } from '../db'
+import type { QueueEntry } from '../hooks/usePlayer'
 import { CoverArt } from './CoverArt'
 import { XIcon, DragHandleIcon } from './Icons'
 
 const ROW_H = 64
 
 interface Props {
-  queue: Track[]
-  queueIndex: number
+  current: Track | null
+  upcoming: QueueEntry[]
+  shuffle: boolean
   onClose: () => void
-  onJumpTo: (index: number) => void
-  onRemove: (index: number) => void
+  onJumpTo: (queueIndex: number) => void
+  onRemove: (queueIndex: number) => void
   onReorder: (from: number, to: number) => void
 }
 
 interface DragState {
   fromLocal: number
-  fromQueue: number
   startY: number
   dy: number
 }
 
-export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onReorder }: Props) {
-  const current = queue[queueIndex]
-  const nextUp = queue.slice(queueIndex + 1)
-
+export function QueueView({ current, upcoming, shuffle, onClose, onJumpTo, onRemove, onReorder }: Props) {
   // Ref holds current drag state for stale-closure-free access in event handlers.
   // useState drives rendering.
   const dragRef = useRef<DragState | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
   const didDrag = useRef(false)
 
-  const dragDelta = drag
-    ? Math.max(-drag.fromLocal, Math.min(nextUp.length - 1 - drag.fromLocal, Math.round(drag.dy / ROW_H)))
-    : 0
+  // Hand-ordering a shuffled lap has no meaning — the order is already random,
+  // and a drag would fight the next reshuffle. Apple Music hides it too.
+  const reorderable = !shuffle
+
+  const clampDelta = (d: DragState) =>
+    Math.max(-d.fromLocal, Math.min(upcoming.length - 1 - d.fromLocal, Math.round(d.dy / ROW_H)))
+
+  const dragDelta = drag ? clampDelta(drag) : 0
   const toLocal = drag ? drag.fromLocal + dragDelta : -1
 
   const startDrag = (e: React.PointerEvent, localIdx: number) => {
@@ -42,12 +45,7 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
     // the finger moves outside the small handle area
     e.currentTarget.setPointerCapture(e.pointerId)
     didDrag.current = false
-    const d: DragState = {
-      fromLocal: localIdx,
-      fromQueue: queueIndex + 1 + localIdx,
-      startY: e.clientY,
-      dy: 0,
-    }
+    const d: DragState = { fromLocal: localIdx, startY: e.clientY, dy: 0 }
     dragRef.current = d
     setDrag(d)
   }
@@ -67,11 +65,12 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
     const d = dragRef.current
     if (!d) return
     e.stopPropagation()
-    const delta = Math.max(
-      -d.fromLocal,
-      Math.min(nextUp.length - 1 - d.fromLocal, Math.round(d.dy / ROW_H))
-    )
-    if (delta !== 0) onReorder(d.fromQueue, d.fromQueue + delta)
+    const delta = clampDelta(d)
+    if (delta !== 0) {
+      const from = upcoming[d.fromLocal]
+      const to = upcoming[d.fromLocal + delta]
+      if (from && to) onReorder(from.queueIndex, to.queueIndex)
+    }
     dragRef.current = null
     setDrag(null)
   }
@@ -105,7 +104,10 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
         className="flex items-center justify-between px-5 pb-3 shrink-0"
         style={{ paddingTop: 'calc(env(safe-area-inset-top) + 1rem)' }}
       >
-        <p className="text-white font-bold text-lg tracking-tight">Queue</p>
+        <div>
+          <p className="text-white font-bold text-lg tracking-tight">Queue</p>
+          {shuffle && <p className="text-white/40 text-[11px] mt-0.5">Shuffled</p>}
+        </div>
         <button
           onClick={onClose}
           className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20 transition-colors"
@@ -139,16 +141,15 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
         {/* Next Up */}
         <div className="px-4 pt-3 pb-6">
           <p className="text-white/40 text-xs font-semibold uppercase tracking-widest px-1 pb-2">
-            {nextUp.length > 0 ? 'Next Up' : 'Queue is empty'}
+            {upcoming.length > 0 ? 'Next Up' : 'Nothing up next'}
           </p>
 
-          <div className="relative" style={{ minHeight: nextUp.length * ROW_H }}>
-            {nextUp.map((track, localIdx) => {
-              const qIdx = queueIndex + 1 + localIdx
+          <div className="relative" style={{ minHeight: upcoming.length * ROW_H }}>
+            {upcoming.map(({ track, queueIndex }, localIdx) => {
               const isDraggingThis = drag?.fromLocal === localIdx
               return (
                 <div
-                  key={`${qIdx}-${track.id}`}
+                  key={`${queueIndex}-${track.id}`}
                   className={`absolute left-0 right-0 flex items-center gap-3 px-3 py-3 rounded-2xl select-none ${
                     isDraggingThis ? 'bg-white/[0.12]' : 'bg-white/[0.04]'
                   }`}
@@ -164,7 +165,7 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
                   }}
                   onClick={() => {
                     if (didDrag.current) { didDrag.current = false; return }
-                    onJumpTo(qIdx)
+                    onJumpTo(queueIndex)
                   }}
                 >
                   <CoverArt blob={track.coverBlob} size={44} className="rounded-xl shrink-0" />
@@ -173,7 +174,7 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
                     <p className="text-white/50 text-xs truncate mt-0.5">{track.artist}</p>
                   </div>
                   <button
-                    onClick={e => { e.stopPropagation(); onRemove(qIdx) }}
+                    onClick={e => { e.stopPropagation(); onRemove(queueIndex) }}
                     className="w-7 h-7 flex items-center justify-center text-white/30 active:text-white/70 transition-colors shrink-0"
                     aria-label="Remove from queue"
                   >
@@ -181,17 +182,19 @@ export function QueueView({ queue, queueIndex, onClose, onJumpTo, onRemove, onRe
                   </button>
                   {/* Drag handle — captures pointer directly so events don't rely on
                       bubbling to a container element, which is unreliable on iOS */}
-                  <div
-                    onPointerDown={e => startDrag(e, localIdx)}
-                    onPointerMove={moveDrag}
-                    onPointerUp={endDrag}
-                    onPointerCancel={cancelDrag}
-                    onClick={e => e.stopPropagation()}
-                    className="w-8 h-8 flex items-center justify-center text-white/25 active:text-white/60 cursor-grab shrink-0 touch-none"
-                    aria-label="Drag to reorder"
-                  >
-                    <DragHandleIcon size={20} />
-                  </div>
+                  {reorderable && (
+                    <div
+                      onPointerDown={e => startDrag(e, localIdx)}
+                      onPointerMove={moveDrag}
+                      onPointerUp={endDrag}
+                      onPointerCancel={cancelDrag}
+                      onClick={e => e.stopPropagation()}
+                      className="w-8 h-8 flex items-center justify-center text-white/25 active:text-white/60 cursor-grab shrink-0 touch-none"
+                      aria-label="Drag to reorder"
+                    >
+                      <DragHandleIcon size={20} />
+                    </div>
+                  )}
                 </div>
               )
             })}

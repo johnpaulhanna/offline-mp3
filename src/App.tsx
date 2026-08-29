@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { usePlayer } from './hooks/usePlayer'
 import { Library } from './components/Library'
@@ -14,20 +14,28 @@ import { fixCoversIfNeeded } from './lib/fixCovers'
 import { useState } from 'react'
 import type { Track, Playlist } from './db'
 
+// How often to look for a new build while the app is open. Fails harmlessly offline.
+const SW_POLL_MS = 20_000
+
 export default function App() {
-  const { state, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat, reorderQueue, removeFromQueue, jumpTo, setSpeed } = usePlayer()
+  const { state, upcoming, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat, reorderQueue, removeFromQueue, jumpTo, setSpeed } = usePlayer()
   const [showNowPlaying, setShowNowPlaying] = useState(false)
   const [tab, setTab] = useState<Tab>('songs')
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null)
 
   // SW update — checks immediately on load and every 20s while open
   // updateServiceWorker(true) handles the reload itself; no controllerchange handler needed
+  const swPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({
     onRegisteredSW(_url, r) {
       r?.update()
-      setInterval(() => r?.update(), 20_000)
+      swPollRef.current = setInterval(() => r?.update(), SW_POLL_MS)
     },
   })
+
+  useEffect(() => () => {
+    if (swPollRef.current) clearInterval(swPollRef.current)
+  }, [])
 
   // Request persistent storage — re-request on first user gesture since iOS ignores it on page load
   useEffect(() => {
@@ -57,9 +65,10 @@ export default function App() {
   }
 
   const handlePlayShuffle = (tracks: Track[]) => {
-    const idx = Math.floor(Math.random() * tracks.length)
+    if (!tracks.length) return
+    // playQueue deals a fresh shuffled lap starting from this track.
     if (!state.shuffle) toggleShuffle()
-    playQueue(tracks, idx)
+    playQueue(tracks, Math.floor(Math.random() * tracks.length))
     setShowNowPlaying(true)
   }
 
@@ -163,6 +172,7 @@ export default function App() {
       {state.currentTrack && (
         <NowPlaying
           state={state}
+          upcoming={upcoming}
           visible={showNowPlaying}
           onTogglePlay={togglePlay}
           onNext={next}

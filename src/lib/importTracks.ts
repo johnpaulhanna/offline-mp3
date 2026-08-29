@@ -1,12 +1,35 @@
 import { parseBlob } from 'music-metadata'
 import { db, type Track } from '../db'
 
+// Everything music-metadata can read and Safari can play, not just MP3.
+export const AUDIO_ACCEPT = 'audio/*,.mp3,.m4a,.aac,.flac,.wav,.aiff,.ogg'
+
+export interface ImportResult {
+  imported: number
+  skipped: number
+  failed: number
+}
+
+// Same title and same byte length means the same file, for any purpose the user
+// cares about. Goes through the title index, so this reads a handful of rows
+// rather than scanning the library.
+export async function findDuplicateTrackId(title: string, size: number): Promise<number | undefined> {
+  const matches = await db.tracks.where('title').equals(title).toArray()
+  for (const t of matches) {
+    if (t.id == null) continue
+    // Audio moved to its own table in db v4; older rows still carry it inline.
+    const blob = (await db.trackFiles.get(t.id))?.fileBlob ?? t.fileBlob
+    if (blob?.size === size) return t.id
+  }
+  return undefined
+}
+
 export async function importFiles(
   files: FileList,
   playlistId?: number,
   onProgress?: (done: number, total: number) => void,
-): Promise<number> {
-  let imported = 0
+): Promise<ImportResult> {
+  const result: ImportResult = { imported: 0, skipped: 0, failed: 0 }
   const importedIds: number[] = []
   const fileArray = Array.from(files)
   const total = fileArray.length
@@ -17,10 +40,19 @@ export async function importFiles(
       const metadata = await parseBlob(file)
       const { common, format } = metadata
 
-      const title = common.title || file.name.replace(/\.mp3$/i, '')
+      const title = common.title || file.name.replace(/\.[a-z0-9]+$/i, '')
       const artist = common.artist || 'Unknown Artist'
       const album = common.album || 'Unknown Album'
       const duration = format.duration ?? 0
+
+      // Re-picking the same file from Files is easy to do by accident.
+      const duplicate = await findDuplicateTrackId(title, file.size)
+      if (duplicate != null) {
+        result.skipped++
+        importedIds.push(duplicate)
+        onProgress?.(i + 1, total)
+        continue
+      }
 
       let coverBlob: Blob | null = null
       if (common.picture && common.picture.length > 0) {
@@ -45,19 +77,26 @@ export async function importFiles(
         await db.trackCovers.put({ id: id as number, coverBlob })
       }
       importedIds.push(id as number)
-      imported++
+      result.imported++
     } catch (err) {
       console.error(`Failed to import ${file.name}:`, err)
+      result.failed++
     }
     onProgress?.(i + 1, total)
   }
 
   if (playlistId !== undefined && importedIds.length > 0) {
-    const base = await db.playlistTracks.where('playlistId').equals(playlistId).count()
-    await db.playlistTracks.bulkAdd(
-      importedIds.map((trackId, i) => ({ playlistId, trackId, position: base + i }))
+    // Skipped duplicates may already be in this playlist; appending by count()
+    // would also collide with any gap left by an earlier removal.
+    const already = new Set(
+      (await db.playlistTracks.where('playlistId').equals(playlistId).toArray()).map(pt => pt.trackId)
     )
+    let position = already.size
+    const additions = importedIds
+      .filter(id => !already.has(id))
+      .map(trackId => ({ playlistId, trackId, position: position++ }))
+    if (additions.length) await db.playlistTracks.bulkAdd(additions)
   }
 
-  return imported
+  return result
 }

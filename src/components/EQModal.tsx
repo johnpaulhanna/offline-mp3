@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { setEQGain, applyPreset, getEQGains, ensureEQConnected, EQ_PRESETS, type EQBand, type EQGains } from '../lib/audioEQ'
+import { setEQGain, applyPreset, getEQGains, isEQActive, isEQSpent, EQ_PRESETS, type EQBand, type EQGains } from '../lib/audioEQ'
 import { XIcon } from './Icons'
 
 const MIN = -12
@@ -108,7 +108,6 @@ export function EQModal({ onClose }: Props) {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
-    ensureEQConnected()
     const id = requestAnimationFrame(() => setVisible(true))
     return () => cancelAnimationFrame(id)
   }, [])
@@ -193,6 +192,18 @@ export function EQModal({ onClose }: Props) {
           <VerticalSlider label="Mid" value={gains.mid} onChange={v => handleGain('mid', v)} />
           <VerticalSlider label="Treble" value={gains.treble} onChange={v => handleGain('treble', v)} />
         </div>
+
+        {isEQSpent() ? (
+          <p className="px-6 pb-6 -mt-4 text-white/35 text-[11px] leading-relaxed">
+            The equalizer switched itself off when the app went to the background — that is
+            what keeps lock-screen playback working. Reopen the app to use it again.
+          </p>
+        ) : isEQActive() ? (
+          <p className="px-6 pb-6 -mt-4 text-white/35 text-[11px] leading-relaxed">
+            Playing through the equalizer. It switches itself off whenever the app goes to
+            the background, so lock-screen playback keeps working.
+          </p>
+        ) : null}
       </div>
     </div>
   )

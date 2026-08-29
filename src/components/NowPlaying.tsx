@@ -1,6 +1,7 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import type { PlayerState } from '../hooks/usePlayer'
+import type { PlayerState, QueueEntry } from '../hooks/usePlayer'
+import { useBlobUrl } from '../hooks/useBlobUrl'
 import { toggleLike } from '../hooks/useTracks'
 import { db } from '../db'
 import { CoverArt } from './CoverArt'
@@ -14,6 +15,7 @@ import {
 
 interface Props {
   state: PlayerState
+  upcoming: QueueEntry[]
   visible: boolean
   onTogglePlay: () => void
   onNext: () => void
@@ -38,7 +40,7 @@ function formatTime(s: number) {
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
 export function NowPlaying({
-  state, visible, onTogglePlay, onNext, onPrev, onSeek,
+  state, upcoming, visible, onTogglePlay, onNext, onPrev, onSeek,
   onToggleShuffle, onCycleRepeat, onClose,
   onJumpTo, onRemoveFromQueue, onReorderQueue, onSetSpeed,
 }: Props) {
@@ -53,20 +55,14 @@ export function NowPlaying({
     null as Blob | null
   ) ?? null) as Blob | null
 
-  // Blurred background URL
-  const [bgUrl, setBgUrl] = useState<string | null>(null)
-  useEffect(() => {
-    if (!coverBlob) { setBgUrl(null); return }
-    const url = URL.createObjectURL(coverBlob)
-    setBgUrl(url)
-    return () => URL.revokeObjectURL(url)
-  }, [coverBlob])
+  // Blurred background
+  const bgUrl = useBlobUrl(coverBlob)
 
   // Seek bar
   const barRef = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
   const [dragPct, setDragPct] = useState<number | null>(null)
-  const [pendingSeekPct, setPendingSeekPct] = useState<number | null>(null)
+  const [pendingSeek, setPendingSeek] = useState<{ pct: number; trackId: number | undefined } | null>(null)
 
   const pctFromPointer = (e: React.PointerEvent) => {
     if (!barRef.current) return 0
@@ -74,19 +70,22 @@ export function NowPlaying({
     return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
   }
 
-  // Clear pendingSeekPct once audio position catches up to the seek target
-  useEffect(() => {
-    if (pendingSeekPct === null || duration <= 0) return
-    if (Math.abs(position / duration - pendingSeekPct) < 0.02) {
-      setPendingSeekPct(null)
-    }
-  }, [position, pendingSeekPct, duration])
+  // Hold the thumb at the seek target until playback catches up, so it doesn't
+  // snap backwards for a frame. Adjusted during render rather than in an effect:
+  // an effect would commit a stale frame first, which is the jump we're avoiding.
+  if (
+    pendingSeek &&
+    (pendingSeek.trackId !== currentTrack?.id ||
+      (duration > 0 && Math.abs(position / duration - pendingSeek.pct) < 0.02))
+  ) {
+    setPendingSeek(null)
+  }
 
   const isDragging = dragPct !== null
   const displayPct = isDragging
-    ? dragPct! * 100
-    : pendingSeekPct !== null
-      ? pendingSeekPct * 100
+    ? dragPct * 100
+    : pendingSeek
+      ? pendingSeek.pct * 100
       : (duration > 0 ? (position / duration) * 100 : 0)
 
   // Swipe down to dismiss
@@ -126,22 +125,25 @@ export function NowPlaying({
     false
   ) ?? false
 
-  // Heart pop animation — fire when liked becomes true
-  const prevLiked = useRef(liked)
+  // Heart pop animation — replay it each time the song becomes liked.
+  const [likedShown, setLikedShown] = useState(liked)
   const [heartKey, setHeartKey] = useState(0)
-  useEffect(() => {
-    if (liked && !prevLiked.current) setHeartKey(k => k + 1)
-    prevLiked.current = liked
-  }, [liked])
+  if (liked !== likedShown) {
+    setLikedShown(liked)
+    if (liked) setHeartKey(k => k + 1)
+  }
 
-  // Queue and EQ sheets
+  // Queue and EQ sheets — closed whenever Now Playing slides away.
   const [showQueue, setShowQueue] = useState(false)
   const [showEQ, setShowEQ] = useState(false)
-
-  // Close sheets when NowPlaying slides away
-  useEffect(() => {
-    if (!visible) { setShowQueue(false); setShowEQ(false) }
-  }, [visible])
+  const [visibleShown, setVisibleShown] = useState(visible)
+  if (visible !== visibleShown) {
+    setVisibleShown(visible)
+    if (!visible) {
+      setShowQueue(false)
+      setShowEQ(false)
+    }
+  }
 
   if (!currentTrack) return null
 
@@ -241,6 +243,7 @@ export function NowPlaying({
             <CoverArt
               blob={coverBlob}
               fluid
+              eager
               className={`rounded-2xl shadow-2xl w-full transition-opacity duration-200 ${showQueue ? 'opacity-30' : 'opacity-100'}`}
             />
             {showQueue && (
@@ -292,10 +295,10 @@ export function NowPlaying({
               const pct = pctFromPointer(e)
               dragging.current = false
               setDragPct(null)
-              setPendingSeekPct(pct)
+              setPendingSeek({ pct, trackId: currentTrack.id })
               onSeek(pct * (duration || 1))
             }}
-            onPointerCancel={() => { dragging.current = false; setDragPct(null); setPendingSeekPct(null) }}
+            onPointerCancel={() => { dragging.current = false; setDragPct(null); setPendingSeek(null) }}
           >
             {/* Track */}
             <div
@@ -322,7 +325,7 @@ export function NowPlaying({
             />
           </div>
           <div className="flex justify-between text-xs text-white/40 -mt-1">
-            <span>{formatTime(isDragging ? dragPct! * duration : pendingSeekPct !== null ? pendingSeekPct * duration : position)}</span>
+            <span>{formatTime((displayPct / 100) * duration)}</span>
             <span>{formatTime(duration)}</span>
           </div>
         </div>
@@ -363,8 +366,9 @@ export function NowPlaying({
       {/* Queue sheet — overlays NowPlaying content */}
       {showQueue && (
         <QueueView
-          queue={state.queue}
-          queueIndex={state.queueIndex}
+          current={currentTrack}
+          upcoming={upcoming}
+          shuffle={shuffle}
           onClose={() => setShowQueue(false)}
           onJumpTo={idx => { onJumpTo(idx); setShowQueue(false) }}
           onRemove={onRemoveFromQueue}

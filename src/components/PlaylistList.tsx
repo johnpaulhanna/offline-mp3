@@ -184,8 +184,11 @@ export function PlaylistList({ onSelect, onPlayAll, onPlayShuffle }: Props) {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const didLongPress = useRef(false)
 
-  const startLongPress = (pl: Playlist) => {
+  const pressStart = useRef<{ x: number; y: number } | null>(null)
+
+  const startLongPress = (e: React.PointerEvent, pl: Playlist) => {
     didLongPress.current = false
+    pressStart.current = { x: e.clientX, y: e.clientY }
     longPressTimer.current = setTimeout(() => {
       didLongPress.current = true
       if ('vibrate' in navigator) (navigator as Navigator & { vibrate: (d: number) => void }).vibrate(40)
@@ -197,8 +200,20 @@ export function PlaylistList({ onSelect, onPlayAll, onPlayShuffle }: Props) {
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
   }
 
+  // A finger that travelled is a scroll, not a tap — matches the songs list.
+  const movePress = (e: React.PointerEvent) => {
+    const start = pressStart.current
+    if (!start) return
+    const dx = e.clientX - start.x
+    const dy = e.clientY - start.y
+    if (Math.sqrt(dx * dx + dy * dy) > 10) {
+      cancelLongPress()
+      pressStart.current = null
+    }
+  }
+
   const handleTap = (pl: Playlist) => {
-    if (didLongPress.current) return
+    if (didLongPress.current || !pressStart.current) return
     onSelect(pl)
   }
 
@@ -260,10 +275,11 @@ export function PlaylistList({ onSelect, onPlayAll, onPlayShuffle }: Props) {
           playlists.map(pl => (
             <div
               key={pl.id}
-              onPointerDown={() => startLongPress(pl)}
-              onPointerUp={() => { cancelLongPress(); handleTap(pl) }}
-              onPointerCancel={cancelLongPress}
-              onPointerLeave={cancelLongPress}
+              onPointerDown={e => startLongPress(e, pl)}
+              onPointerMove={movePress}
+              onPointerUp={() => { cancelLongPress(); handleTap(pl); pressStart.current = null }}
+              onPointerCancel={() => { cancelLongPress(); pressStart.current = null }}
+              onPointerLeave={() => { cancelLongPress(); pressStart.current = null }}
               className="flex items-center gap-4 px-4 py-3 active:bg-white/[0.05] cursor-pointer border-b border-white/[0.05] last:border-0 select-none"
             >
               <div className="shrink-0">

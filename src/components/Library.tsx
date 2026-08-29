@@ -5,6 +5,8 @@ import { CoverArt } from './CoverArt'
 import { MusicNoteIcon, HeartIcon, HeartFilledIcon } from './Icons'
 import { AddToPlaylistModal } from './AddToPlaylistModal'
 import { TrackContextMenu } from './TrackContextMenu'
+import { StorageInfo } from './StorageInfo'
+import { BackupBar } from './BackupBar'
 
 type DisplaySort = 'alpha' | 'newest' | 'oldest'
 const SORT_LABELS: Record<DisplaySort, string> = { alpha: 'A-Z', newest: 'Newest', oldest: 'Oldest' }
@@ -205,6 +207,11 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
             Requires one online load to install, then works fully offline.
           </p>
         </div>
+        {/* Reachable with an empty library — this is the screen someone lands on
+            after a reinstall, when restoring is the only thing they want to do. */}
+        <div className="w-full max-w-xs">
+          <BackupBar />
+        </div>
       </div>
     )
   }
@@ -323,7 +330,7 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
                     onPointerMove={e => onRowMove(e, track)}
                     onPointerUp={e => onRowUp(e, track, idx)}
                     onPointerCancel={onRowCancel}
-                    className={`flex items-center gap-3 px-3 py-3 rounded-2xl cursor-pointer select-none transition-colors ${
+                    className={`library-row flex items-center gap-3 px-3 py-3 rounded-2xl cursor-pointer select-none transition-colors ${
                       isSelected ? 'bg-[#fc3c44]/20' : isActive ? 'bg-white/10' : 'bg-white/[0.05] active:bg-white/10'
                     }`}
                     style={{
@@ -369,6 +376,8 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
               )
             })
           )}
+          <StorageInfo />
+          <BackupBar />
           <div className="h-28" />
         </div>
 

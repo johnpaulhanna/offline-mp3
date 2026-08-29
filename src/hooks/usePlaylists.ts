@@ -36,18 +36,35 @@ export async function deletePlaylist(id: number) {
   })
 }
 
+// Positions must stay a dense 0..n-1 run: they are the sort key, and a gap left
+// by a removal used to collide with the next appended track, leaving the order
+// of those two arbitrary.
+export async function renumberPlaylist(playlistId: number) {
+  const rows = await db.playlistTracks.where('playlistId').equals(playlistId).sortBy('position')
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].position !== i && rows[i].id != null) {
+      await db.playlistTracks.update(rows[i].id!, { position: i })
+    }
+  }
+}
+
 export async function addTrackToPlaylist(playlistId: number, trackId: number) {
-  const existing = await db.playlistTracks
-    .where('playlistId').equals(playlistId)
-    .and(pt => pt.trackId === trackId)
-    .first()
-  if (existing) return
-  const count = await db.playlistTracks.where('playlistId').equals(playlistId).count()
-  await db.playlistTracks.add({ playlistId, trackId, position: count })
+  // One transaction so a double-tap cannot slip two rows past the existence check.
+  await db.transaction('rw', db.playlistTracks, async () => {
+    const rows = await db.playlistTracks.where('playlistId').equals(playlistId).sortBy('position')
+    if (rows.some(pt => pt.trackId === trackId)) return
+    const position = rows.length ? rows[rows.length - 1].position + 1 : 0
+    await db.playlistTracks.add({ playlistId, trackId, position })
+  })
 }
 
 export async function removeFromPlaylist(playlistTrackId: number) {
-  await db.playlistTracks.delete(playlistTrackId)
+  await db.transaction('rw', db.playlistTracks, async () => {
+    const row = await db.playlistTracks.get(playlistTrackId)
+    if (!row) return
+    await db.playlistTracks.delete(playlistTrackId)
+    await renumberPlaylist(row.playlistId)
+  })
 }
 
 export async function renamePlaylist(id: number, name: string) {
@@ -56,9 +73,4 @@ export async function renamePlaylist(id: number, name: string) {
 
 export async function updatePlaylistCover(id: number, blob: Blob | null) {
   await db.playlists.update(id, { coverBlob: blob })
-}
-
-export async function getTrackPlaylistIds(trackId: number): Promise<number[]> {
-  const pts = await db.playlistTracks.where('trackId').equals(trackId).toArray()
-  return pts.map(pt => pt.playlistId)
 }

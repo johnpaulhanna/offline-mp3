@@ -1,5 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, type Track } from '../db'
+import { renumberPlaylist } from './usePlaylists'
 
 export type SortKey = 'title' | 'artist' | 'album' | 'addedAt' | 'addedAt_asc'
 
@@ -28,20 +29,20 @@ export function useTracks(sort: SortKey = 'title') {
 }
 
 export async function deleteTrack(id: number) {
-  await db.transaction('rw', db.tracks, db.trackFiles, db.trackCovers, db.playlistTracks, async () => {
-    await db.tracks.delete(id)
-    await db.trackFiles.delete(id)
-    await db.trackCovers.delete(id)
-    await db.playlistTracks.where('trackId').equals(id).delete()
-  })
+  await deleteTracks([id])
 }
 
 export async function deleteTracks(ids: number[]) {
   await db.transaction('rw', db.tracks, db.trackFiles, db.trackCovers, db.playlistTracks, async () => {
+    const affected = await db.playlistTracks.where('trackId').anyOf(ids).toArray()
     await db.tracks.bulkDelete(ids)
     await db.trackFiles.bulkDelete(ids)
     await db.trackCovers.bulkDelete(ids)
     await db.playlistTracks.where('trackId').anyOf(ids).delete()
+    // Close the position gaps this left behind in every playlist they were in.
+    for (const playlistId of new Set(affected.map(pt => pt.playlistId))) {
+      await renumberPlaylist(playlistId)
+    }
   })
 }
 
