@@ -15,11 +15,12 @@ export interface LogEntry {
   detail?: string
 }
 
-// On by default in this build: the whole point is to capture a failure that
-// only happens on someone else's phone, so it has to be recording already.
-let enabled = true
+// Off unless someone turns it on from the Diagnostics sheet. Recording writes
+// to localStorage synchronously on every media event, which is not something to
+// leave running for people who are just listening to music.
+let enabled = false
 try {
-  enabled = localStorage.getItem('debug-log-on') !== '0'
+  enabled = localStorage.getItem('debug-log-on') === '1'
 } catch {
   // storage blocked
 }
