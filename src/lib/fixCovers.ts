@@ -31,6 +31,8 @@ export async function fixCoversIfNeeded() {
       if (track?.coverBlob) {
         await db.trackCovers.put({ id, coverBlob: track.coverBlob })
       }
-    } catch {}
+    } catch {
+      // one unreadable track must not stop the rest of the pass
+    }
   }
 }

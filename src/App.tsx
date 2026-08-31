@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useCallback, useMemo } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { usePlayer } from './hooks/usePlayer'
 import { Library } from './components/Library'
@@ -14,20 +14,28 @@ import { fixCoversIfNeeded } from './lib/fixCovers'
 import { useState } from 'react'
 import type { Track, Playlist } from './db'
 
+// How often to look for a new build while the app is open. Fails harmlessly offline.
+const SW_POLL_MS = 20_000
+
 export default function App() {
-  const { state, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat, reorderQueue, removeFromQueue, jumpTo, setSpeed } = usePlayer()
+  const { state, upcoming, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat, reorderQueue, removeFromQueue, jumpTo, setSpeed } = usePlayer()
   const [showNowPlaying, setShowNowPlaying] = useState(false)
   const [tab, setTab] = useState<Tab>('songs')
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null)
 
   // SW update — checks immediately on load and every 20s while open
   // updateServiceWorker(true) handles the reload itself; no controllerchange handler needed
+  const swPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({
     onRegisteredSW(_url, r) {
       r?.update()
-      setInterval(() => r?.update(), 20_000)
+      swPollRef.current = setInterval(() => r?.update(), SW_POLL_MS)
     },
   })
+
+  useEffect(() => () => {
+    if (swPollRef.current) clearInterval(swPollRef.current)
+  }, [])
 
   // Request persistent storage — re-request on first user gesture since iOS ignores it on page load
   useEffect(() => {
@@ -47,39 +55,103 @@ export default function App() {
     return () => clearTimeout(t)
   }, [])
 
-  const handlePlay = (tracks: Track[], index: number) => {
+  // These are stable so the memoised content below can actually stay memoised.
+  const handlePlay = useCallback((tracks: Track[], index: number) => {
     playQueue(tracks, index)
-  }
+  }, [playQueue])
 
-  const handlePlayAndOpen = (tracks: Track[], index: number) => {
+  const handlePlayAndOpen = useCallback((tracks: Track[], index: number) => {
     playQueue(tracks, index)
     setShowNowPlaying(true)
-  }
+  }, [playQueue])
 
-  const handlePlayShuffle = (tracks: Track[]) => {
-    const idx = Math.floor(Math.random() * tracks.length)
-    if (!state.shuffle) toggleShuffle()
-    playQueue(tracks, idx)
+  const shuffle = state.shuffle
+  const handlePlayShuffle = useCallback((tracks: Track[]) => {
+    if (!tracks.length) return
+    // playQueue deals a fresh shuffled lap starting from this track.
+    if (!shuffle) toggleShuffle()
+    playQueue(tracks, Math.floor(Math.random() * tracks.length))
     setShowNowPlaying(true)
-  }
+  }, [shuffle, toggleShuffle, playQueue])
 
-  const handleTabChange = (t: Tab) => {
+  const handleTabChange = useCallback((t: Tab) => {
     setTab(t)
     if (t === 'songs') setSelectedPlaylist(null)
-  }
+  }, [])
+
+  const handleBack = useCallback(() => setSelectedPlaylist(null), [])
+
+  const currentTrackId = state.currentTrack?.id
+  const playing = state.playing
+  const content = useMemo(() => (
+    <>
+      {tab === 'songs' && (
+        <Library
+          onPlay={handlePlay}
+          onPlayAndOpen={handlePlayAndOpen}
+          onPlayNext={playNext}
+          onAddToQueue={addToQueue}
+          currentTrackId={currentTrackId}
+          playing={playing}
+        />
+      )}
+      {tab === 'artists' && (
+        <ArtistsView
+          onPlay={handlePlay}
+          onPlayAndOpen={handlePlayAndOpen}
+          onPlayNext={playNext}
+          onAddToQueue={addToQueue}
+          currentTrackId={currentTrackId}
+          playing={playing}
+        />
+      )}
+      {tab === 'albums' && (
+        <AlbumsView
+          onPlay={handlePlay}
+          onPlayAndOpen={handlePlayAndOpen}
+          onPlayNext={playNext}
+          onAddToQueue={addToQueue}
+          currentTrackId={currentTrackId}
+          playing={playing}
+        />
+      )}
+      {tab === 'playlists' && !selectedPlaylist && (
+        <PlaylistList
+          onSelect={setSelectedPlaylist}
+          onPlayAll={handlePlayAndOpen}
+          onPlayShuffle={handlePlayShuffle}
+        />
+      )}
+      {tab === 'playlists' && selectedPlaylist && (
+        <PlaylistDetail
+          playlist={selectedPlaylist}
+          currentTrackId={currentTrackId}
+          playing={playing}
+          onPlay={handlePlay}
+          onPlayAll={handlePlayAndOpen}
+          onPlayNext={playNext}
+          onAddToQueue={addToQueue}
+          onPlayShuffle={handlePlayShuffle}
+          onBack={handleBack}
+        />
+      )}
+    </>
+  ), [tab, selectedPlaylist, currentTrackId, playing, handlePlay, handlePlayAndOpen,
+      playNext, addToQueue, handlePlayShuffle, handleBack])
 
   return (
     <div className="flex flex-col h-full bg-black text-white" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
 
-      {/* Update banner — shown when a new version is waiting */}
+      {/* Update prompt — stays user-triggered on purpose. A silent auto-update
+          once wiped people's libraries (f1da2c9), so this asks rather than acts. */}
       {needRefresh && (
-        <div className="shrink-0 bg-blue-600 flex items-center justify-between px-4 py-2 text-sm">
-          <span>New version available</span>
+        <div className="shrink-0 mx-3 mt-2 flex items-center justify-between gap-3 rounded-2xl bg-white/[0.08] px-4 py-2.5">
+          <span className="text-[13px] text-white/70">A new version is ready</span>
           <button
             onClick={() => updateServiceWorker(true)}
-            className="font-bold bg-white text-blue-600 px-3 py-1 rounded-full text-xs"
+            className="text-[13px] font-semibold text-[#fc3c44] active:opacity-50 transition-opacity"
           >
-            Update now
+            Update
           </button>
         </div>
       )}
@@ -92,58 +164,11 @@ export default function App() {
         {(tab === 'songs') && <ImportButton />}
       </div>
 
-      {/* Main content */}
+      {/* Main content — memoised on what it actually depends on. The player's
+          position updates several times a second, and without this every one of
+          them re-rendered the whole library, artist and album lists. */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {tab === 'songs' && (
-          <Library
-            onPlay={handlePlay}
-            onPlayAndOpen={handlePlayAndOpen}
-            onPlayNext={playNext}
-            onAddToQueue={addToQueue}
-            currentTrackId={state.currentTrack?.id}
-            playing={state.playing}
-          />
-        )}
-        {tab === 'artists' && (
-          <ArtistsView
-            onPlay={handlePlay}
-            onPlayAndOpen={handlePlayAndOpen}
-            onPlayNext={playNext}
-            onAddToQueue={addToQueue}
-            currentTrackId={state.currentTrack?.id}
-            playing={state.playing}
-          />
-        )}
-        {tab === 'albums' && (
-          <AlbumsView
-            onPlay={handlePlay}
-            onPlayAndOpen={handlePlayAndOpen}
-            onPlayNext={playNext}
-            onAddToQueue={addToQueue}
-            currentTrackId={state.currentTrack?.id}
-            playing={state.playing}
-          />
-        )}
-        {tab === 'playlists' && !selectedPlaylist && (
-          <PlaylistList
-            onSelect={setSelectedPlaylist}
-            onPlayAll={handlePlayAndOpen}
-            onPlayShuffle={handlePlayShuffle}
-          />
-        )}
-        {tab === 'playlists' && selectedPlaylist && (
-          <PlaylistDetail
-            playlist={selectedPlaylist}
-            currentTrackId={state.currentTrack?.id}
-            playing={state.playing}
-            onPlay={handlePlay}
-            onPlayAll={handlePlayAndOpen}
-            onPlayNext={playNext}
-            onAddToQueue={addToQueue}
-            onPlayShuffle={handlePlayShuffle}
-            onBack={() => setSelectedPlaylist(null)}
-          />
-        )}
+        {content}
       </div>
 
       {/* Mini player */}
@@ -163,6 +188,7 @@ export default function App() {
       {state.currentTrack && (
         <NowPlaying
           state={state}
+          upcoming={upcoming}
           visible={showNowPlaying}
           onTogglePlay={togglePlay}
           onNext={next}

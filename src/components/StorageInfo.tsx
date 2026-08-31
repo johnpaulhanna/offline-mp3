@@ -4,31 +4,53 @@ import { db } from '../db'
 function formatBytes(n: number) {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
+interface Info {
+  tracks: number
+  used: number | null
+  persisted: boolean
 }
 
 export function StorageInfo() {
-  const [trackCount, setTrackCount] = useState(0)
-  const [usage, setUsage] = useState<{ used: number; quota: number } | null>(null)
+  const [info, setInfo] = useState<Info | null>(null)
 
   useEffect(() => {
+    let cancelled = false
+
     const update = async () => {
-      const count = await db.tracks.count()
-      setTrackCount(count)
+      if (document.hidden) return
+      const tracks = await db.tracks.count()
+      let used: number | null = null
       if ('storage' in navigator && 'estimate' in navigator.storage) {
-        const est = await navigator.storage.estimate()
-        setUsage({ used: est.usage ?? 0, quota: est.quota ?? 0 })
+        used = (await navigator.storage.estimate()).usage ?? null
       }
+      const persisted = (await navigator.storage?.persisted?.()) ?? false
+      if (!cancelled) setInfo({ tracks, used, persisted })
     }
+
     update()
-    const id = setInterval(update, 10000)
-    return () => clearInterval(id)
+    // Only while the app is on screen — this used to poll every 10s forever.
+    const id = setInterval(update, 30_000)
+    document.addEventListener('visibilitychange', update)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', update)
+    }
   }, [])
 
+  if (!info) return null
+
   return (
-    <div className="text-center text-xs text-gray-600 py-2 px-4">
-      {trackCount} track{trackCount !== 1 ? 's' : ''}
-      {usage && ` · ${formatBytes(usage.used)} used of ${formatBytes(usage.quota)}`}
+    <div className="text-center text-[11px] text-white/25 px-4">
+      {info.tracks} song{info.tracks !== 1 ? 's' : ''}
+      {info.used != null && ` · ${formatBytes(info.used)}`}
+      {!info.persisted && info.tracks > 0 && (
+        <p className="text-amber-500/40 mt-1">Storage isn't protected yet — keep a backup.</p>
+      )}
     </div>
   )
 }

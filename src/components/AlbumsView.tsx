@@ -1,9 +1,10 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { useTracks, deleteTrack, toggleLike } from '../hooks/useTracks'
 import type { Track } from '../db'
 import { CoverArt } from './CoverArt'
 import { TrackContextMenu } from './TrackContextMenu'
 import { AddToPlaylistModal } from './AddToPlaylistModal'
+import { ConfirmDialog } from './ConfirmDialog'
 
 interface Props {
   onPlay: (tracks: Track[], index: number) => void
@@ -15,16 +16,24 @@ interface Props {
 }
 
 interface AlbumGroup {
+  key: string
   name: string
   artist: string
   tracks: Track[]
 }
+
+// An album is identified by title *and* artist. Keying on the title alone put
+// every "Greatest Hits" in the library into one album — and collided as a React
+// key while it was at it.
+const albumKey = (album: string, artist: string) => `${album}\u0000${artist}`
 
 export function AlbumsView({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, currentTrackId, playing }: Props) {
   const allTracks = useTracks('album')
   const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null)
   const [contextTrack, setContextTrack] = useState<{ track: Track; idx: number; all: Track[] } | null>(null)
   const [addingTrackId, setAddingTrackId] = useState<number | null>(null)
+  // Deleting a track destroys the only copy of the audio; ask first.
+  const [confirmingDelete, setConfirmingDelete] = useState<Track | null>(null)
 
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpStart = useRef<{ x: number; y: number } | null>(null)
@@ -59,19 +68,27 @@ export function AlbumsView({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, cu
     return `${m}:${sec.toString().padStart(2, '0')}`
   }
 
-  const albumMap = new Map<string, AlbumGroup>()
-  for (const track of allTracks) {
-    const key = track.album || 'Unknown Album'
-    if (!albumMap.has(key)) {
-      albumMap.set(key, { name: key, artist: track.artist, tracks: [] })
+  // Memoised: without this the whole library is regrouped on every render, and
+  // the player's position ticks re-render this view several times a second.
+  const albumMap = useMemo(() => {
+    const map = new Map<string, AlbumGroup>()
+    for (const track of allTracks) {
+      const name = track.album || 'Unknown Album'
+      const artist = track.artist || 'Unknown Artist'
+      const key = albumKey(name, artist)
+      if (!map.has(key)) map.set(key, { key, name, artist, tracks: [] })
+      map.get(key)!.tracks.push(track)
     }
-    albumMap.get(key)!.tracks.push(track)
-  }
-  const albums: AlbumGroup[] = Array.from(albumMap.values())
+    return map
+  }, [allTracks])
+  const albums: AlbumGroup[] = useMemo(() => Array.from(albumMap.values()), [albumMap])
 
-  if (selectedAlbum) {
-    const group = albumMap.get(selectedAlbum)
-    const albumTracks = group?.tracks ?? []
+  // Falls through to the list when the album is gone — deleting its last track
+  // used to strand you on an empty detail page.
+  const selectedGroup = selectedAlbum ? albumMap.get(selectedAlbum) : undefined
+  if (selectedGroup) {
+    const group = selectedGroup
+    const albumTracks = group.tracks
     return (
       <>
         <div className="flex flex-col flex-1 overflow-hidden">
@@ -127,11 +144,20 @@ export function AlbumsView({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, cu
             onAddToQueue={() => { onAddToQueue(contextTrack.track); setContextTrack(null) }}
             onAddToPlaylist={() => { setAddingTrackId(contextTrack.track.id!); setContextTrack(null) }}
             onToggleLike={async () => { await toggleLike(contextTrack.track.id!); setContextTrack(null) }}
-            onDelete={async () => { await deleteTrack(contextTrack.track.id!); setContextTrack(null) }}
+            onDelete={() => { const t = contextTrack.track; setContextTrack(null); setConfirmingDelete(t) }}
           />
         )}
         {addingTrackId != null && (
           <AddToPlaylistModal trackIds={[addingTrackId]} onClose={() => setAddingTrackId(null)} />
+        )}
+        {confirmingDelete && (
+          <ConfirmDialog
+            title={`Delete "${confirmingDelete.title}"?`}
+            message="The song file is removed from this device. This cannot be undone."
+            confirmLabel="Delete Song"
+            onConfirm={() => { void deleteTrack(confirmingDelete.id!) }}
+            onClose={() => setConfirmingDelete(null)}
+          />
         )}
       </>
     )
@@ -140,10 +166,13 @@ export function AlbumsView({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, cu
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       <div className="overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
+        {albums.length === 0 && (
+          <p className="text-gray-500 text-sm text-center mt-16">No albums yet</p>
+        )}
         {albums.map(album => (
           <div
-            key={album.name}
-            onClick={() => setSelectedAlbum(album.name)}
+            key={album.key}
+            onClick={() => setSelectedAlbum(album.key)}
             className="flex items-center gap-4 px-4 py-3 active:bg-white/[0.05] cursor-pointer border-b border-white/[0.05] last:border-0 select-none"
           >
             <CoverArt

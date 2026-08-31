@@ -1,10 +1,14 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useMemo } from 'react'
 import { useTracks, deleteTrack, deleteTracks, toggleLike } from '../hooks/useTracks'
 import type { Track } from '../db'
 import { CoverArt } from './CoverArt'
 import { MusicNoteIcon, HeartIcon, HeartFilledIcon } from './Icons'
 import { AddToPlaylistModal } from './AddToPlaylistModal'
 import { TrackContextMenu } from './TrackContextMenu'
+import { StorageInfo } from './StorageInfo'
+import { BackupBar } from './BackupBar'
+import { DiagnosticsSheet } from './DiagnosticsSheet'
+import { ConfirmDialog } from './ConfirmDialog'
 
 type DisplaySort = 'alpha' | 'newest' | 'oldest'
 const SORT_LABELS: Record<DisplaySort, string> = { alpha: 'A-Z', newest: 'Newest', oldest: 'Oldest' }
@@ -28,6 +32,21 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
   const [showLiked, setShowLiked] = useState(false)
   const [contextTrack, setContextTrack] = useState<{ track: Track; idx: number; all: Track[] } | null>(null)
   const [addingTrackId, setAddingTrackId] = useState<number | null>(null)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
+
+  // Deleting a track destroys the only copy of the audio. Every path that does
+  // it goes through here first.
+  const [confirming, setConfirming] = useState<
+    { title: string; message?: string; confirmLabel: string; run: () => void } | null
+  >(null)
+
+  const confirmDeleteTrack = (track: Track) =>
+    setConfirming({
+      title: `Delete "${track.title}"?`,
+      message: 'The song file is removed from this device. This cannot be undone.',
+      confirmLabel: 'Delete Song',
+      run: () => { void deleteTrack(track.id!) },
+    })
 
   // Multi-select
   const [selectMode, setSelectMode] = useState(false)
@@ -36,12 +55,17 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
 
   // Swipe-to-delete
   const [openSwipeId, setOpenSwipeId] = useState<number | null>(null)
-  const [swipeDrag, setSwipeDrag] = useState<{ id: number; x: number } | null>(null)
+  // Set once when a horizontal drag starts, so the row being dragged can reveal
+  // its delete zone. The moving offset itself is applied straight to the DOM —
+  // putting it in state re-rendered every row in the library on every frame.
+  const [activeSwipeId, setActiveSwipeId] = useState<number | null>(null)
   const gestureRef = useRef<{
     id: number
     startX: number
     startY: number
     baseX: number
+    x: number
+    el: HTMLElement | null
     mode: 'idle' | 'h' | 'v'
     pointerId: number
   } | null>(null)
@@ -53,12 +77,16 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
 
   const sortKey = sort === 'alpha' ? 'title' : sort === 'newest' ? 'addedAt' : 'addedAt_asc'
   const allTracks = useTracks(sortKey)
-  const searched = search.trim()
-    ? allTracks.filter(t =>
-        [t.title, t.artist, t.album].some(f => f.toLowerCase().includes(search.toLowerCase()))
-      )
-    : allTracks
-  const tracks = showLiked ? searched.filter(t => t.liked) : searched
+  // Memoised, and the query is lowercased once rather than per track per field.
+  // This used to re-filter the whole library on every keystroke and on every
+  // frame of a swipe.
+  const tracks = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    const searched = q
+      ? allTracks.filter(t => [t.title, t.artist, t.album].some(f => f?.toLowerCase().includes(q)))
+      : allTracks
+    return showLiked ? searched.filter(t => t.liked) : searched
+  }, [allTracks, search, showLiked])
 
   const toggleSelect = (id: number) => {
     setSelected(prev => {
@@ -74,10 +102,15 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
     setSelected(new Set())
   }
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (selected.size === 0) return
-    await deleteTracks([...selected])
-    exitSelectMode()
+    const ids = [...selected]
+    setConfirming({
+      title: `Delete ${ids.length} song${ids.length === 1 ? '' : 's'}?`,
+      message: 'The song files are removed from this device. This cannot be undone.',
+      confirmLabel: `Delete ${ids.length} Song${ids.length === 1 ? '' : 's'}`,
+      run: () => { void deleteTracks(ids).then(exitSelectMode) },
+    })
   }
 
   // Gesture handlers
@@ -94,6 +127,8 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
       startX: e.clientX,
       startY: e.clientY,
       baseX,
+      x: baseX,
+      el: e.currentTarget as HTMLElement,
       mode: 'idle',
       pointerId: e.pointerId,
     }
@@ -127,6 +162,7 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
         if (lpTimer.current) clearTimeout(lpTimer.current)
         lpStart.current = null
         e.currentTarget.setPointerCapture(e.pointerId)
+        setActiveSwipeId(g.id) // one render, to reveal the delete zone
       } else if (absDy > absDx) {
         g.mode = 'v'
         if (lpTimer.current) clearTimeout(lpTimer.current)
@@ -138,7 +174,12 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
     if (g.mode === 'h') {
       const rawX = g.baseX + dx
       const newX = Math.min(0, Math.max(-DELETE_FULL - 20, rawX))
-      setSwipeDrag({ id: track.id!, x: newX })
+      g.x = newX
+      // Straight to the node: no state, so no re-render of the list per frame.
+      if (g.el) {
+        g.el.style.transition = 'none'
+        g.el.style.transform = `translateX(${newX}px)`
+      }
     }
   }
 
@@ -147,13 +188,22 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
     if (lpTimer.current) clearTimeout(lpTimer.current)
 
     if (g?.mode === 'h') {
-      const currentX = (swipeDrag !== null && swipeDrag.id === track.id) ? swipeDrag.x : g.baseX
-      setSwipeDrag(null)
+      const currentX = g.x
+      const settled = currentX <= -DELETE_FULL ? 0 : currentX <= -DELETE_SNAP / 2 ? -DELETE_SNAP : 0
+      // Land on the resting position ourselves. React may render the same value
+      // it last rendered and write nothing, which would strand our inline style.
+      if (g.el) {
+        g.el.style.transition = 'transform 0.25s ease'
+        g.el.style.transform = `translateX(${settled}px)`
+      }
       gestureRef.current = null
+      setActiveSwipeId(null)
 
       if (currentX <= -DELETE_FULL) {
+        // A full swipe asks rather than deletes — it is far too easy to trigger
+        // by accident while scrolling, and there is no undo.
         setOpenSwipeId(null)
-        deleteTrack(track.id!)
+        confirmDeleteTrack(track)
       } else if (currentX <= -DELETE_SNAP / 2) {
         setOpenSwipeId(track.id!)
       } else {
@@ -178,9 +228,14 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
 
   const onRowCancel = () => {
     if (lpTimer.current) clearTimeout(lpTimer.current)
+    const g = gestureRef.current
+    if (g?.el) {
+      g.el.style.transition = 'transform 0.25s ease'
+      g.el.style.transform = `translateX(${openSwipeId === g.id ? -DELETE_SNAP : 0}px)`
+    }
     gestureRef.current = null
     lpStart.current = null
-    setSwipeDrag(null)
+    setActiveSwipeId(null)
   }
 
   const formatDuration = (s: number) => {
@@ -201,9 +256,11 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
           <p className="text-gray-500 text-sm leading-relaxed">
             Tap <span className="text-white font-medium">Add Music</span> to import MP3s from your Files app.
           </p>
-          <p className="text-gray-600 text-xs mt-3">
-            Requires one online load to install, then works fully offline.
-          </p>
+        </div>
+        {/* Reachable with an empty library — this is the screen someone lands on
+            after a reinstall, when restoring is the only thing they want to do. */}
+        <div className="w-full max-w-xs">
+          <BackupBar prominent />
         </div>
       </div>
     )
@@ -300,18 +357,17 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
             tracks.map((track, idx) => {
               const isActive = track.id === currentTrackId
               const isSelected = selected.has(track.id!)
-              const isDragging = swipeDrag !== null && swipeDrag.id === track.id
-              const isOpen = !isDragging && openSwipeId === track.id
-              const translateX = isDragging ? swipeDrag.x : isOpen ? -DELETE_SNAP : 0
+              const isOpen = openSwipeId === track.id
+              const translateX = isOpen ? -DELETE_SNAP : 0
 
               return (
                 <div key={track.id} className="relative mx-3 mb-1.5">
                   {/* Red delete zone (behind the row) */}
-                  {(isOpen || isDragging) && (
+                  {(isOpen || activeSwipeId === track.id) && (
                     <div
                       className="absolute right-0 top-0 bottom-0 flex items-center justify-end rounded-2xl overflow-hidden"
                       style={{ width: DELETE_SNAP, background: '#ff3b30' }}
-                      onClick={() => { setOpenSwipeId(null); deleteTrack(track.id!) }}
+                      onClick={() => { setOpenSwipeId(null); confirmDeleteTrack(track) }}
                     >
                       <span className="text-white text-xs font-bold pr-4">Delete</span>
                     </div>
@@ -323,12 +379,12 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
                     onPointerMove={e => onRowMove(e, track)}
                     onPointerUp={e => onRowUp(e, track, idx)}
                     onPointerCancel={onRowCancel}
-                    className={`flex items-center gap-3 px-3 py-3 rounded-2xl cursor-pointer select-none transition-colors ${
+                    className={`library-row flex items-center gap-3 px-3 py-3 rounded-2xl cursor-pointer select-none transition-colors ${
                       isSelected ? 'bg-[#fc3c44]/20' : isActive ? 'bg-white/10' : 'bg-white/[0.05] active:bg-white/10'
                     }`}
                     style={{
                       transform: `translateX(${translateX}px)`,
-                      transition: isDragging ? 'none' : 'transform 0.25s ease',
+                      transition: 'transform 0.25s ease',
                     }}
                   >
                     {selectMode ? (
@@ -369,6 +425,14 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
               )
             })
           )}
+          <StorageInfo />
+          <BackupBar />
+          <button
+            onClick={() => setShowDiagnostics(true)}
+            className="mx-auto mt-2 block text-[10px] text-white/15 active:text-white/40"
+          >
+            Diagnostics
+          </button>
           <div className="h-28" />
         </div>
 
@@ -416,7 +480,19 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
             await toggleLike(contextTrack.track.id!)
             setContextTrack(null)
           }}
-          onDelete={async () => { await deleteTrack(contextTrack.track.id!); setContextTrack(null) }}
+          onDelete={() => { const t = contextTrack.track; setContextTrack(null); confirmDeleteTrack(t) }}
+        />
+      )}
+
+      {showDiagnostics && <DiagnosticsSheet onClose={() => setShowDiagnostics(false)} />}
+
+      {confirming && (
+        <ConfirmDialog
+          title={confirming.title}
+          message={confirming.message}
+          confirmLabel={confirming.confirmLabel}
+          onConfirm={confirming.run}
+          onClose={() => setConfirming(null)}
         />
       )}
 

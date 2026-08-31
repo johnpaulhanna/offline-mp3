@@ -1,20 +1,45 @@
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { db, type Track } from '../db'
-import { updateMediaSession } from '../lib/mediaSession'
+import { updateMediaSession, clearMediaSession, updatePositionState, setPlaybackState } from '../lib/mediaSession'
+import { logEvent, describeAudio } from '../lib/debugLog'
 import { setAudioElement, resumeEQ, releaseEQ } from '../lib/audioEQ'
+import {
+  identityOrder,
+  shuffledOrder,
+  remapReorder,
+  orderAfterInsert,
+  orderAfterRemove,
+  advanceOrder,
+} from '../lib/queue'
 
 export type RepeatMode = 'none' | 'all' | 'one'
+
+// State updates stay pure: instead of touching the <audio> element inside a
+// setState updater, they leave a request here that a single effect carries out.
+type PlayerEffect =
+  | { kind: 'load'; autoPlay: boolean }
+  | { kind: 'pause' }
+  | { kind: 'stop' }
+  | null
 
 export interface PlayerState {
   currentTrack: Track | null
   queue: Track[]
-  queueIndex: number
+  queueIndex: number    // index into queue
+  order: number[]       // play order: a permutation of queue indices
+  orderPos: number      // position within order; order[orderPos] === queueIndex
   playing: boolean
   position: number
   duration: number
   shuffle: boolean
   repeat: RepeatMode
   speed: number
+  effect: PlayerEffect
+}
+
+export interface QueueEntry {
+  track: Track
+  queueIndex: number
 }
 
 const SESSION_KEY = 'player-session'
@@ -28,26 +53,66 @@ interface SavedSession {
   speed: number
 }
 
+function readShuffle(): boolean {
+  try {
+    return localStorage.getItem('shuffle') === 'true'
+  } catch {
+    return false // storage blocked (private browsing)
+  }
+}
+
+function readRepeat(): RepeatMode {
+  try {
+    const v = localStorage.getItem('repeat')
+    return v === 'all' || v === 'one' ? v : 'none'
+  } catch {
+    return 'none' // storage blocked (private browsing)
+  }
+}
+
+// audio.load() resets playbackRate to defaultPlaybackRate, so setting only
+// playbackRate silently drops the user's choice on the very next track.
+function applyRate(audio: HTMLAudioElement | null, speed: number) {
+  if (!audio) return
+  audio.defaultPlaybackRate = speed
+  audio.playbackRate = speed
+}
+
+// Move to `orderPos` in `order` and ask the effect to load whatever lands there.
+function playAt(s: PlayerState, order: number[], orderPos: number, autoPlay = true): PlayerState {
+  const queueIndex = order[orderPos]
+  return {
+    ...s,
+    order,
+    orderPos,
+    queueIndex,
+    currentTrack: s.queue[queueIndex],
+    position: 0,
+    effect: { kind: 'load', autoPlay },
+  }
+}
+
 export function usePlayer() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const objectUrlRef = useRef<string | null>(null)
   const pendingSeekRef = useRef<number | null>(null)
-  const advanceRef = useRef<() => void>(() => {})
   const lastPositionRef = useRef(0)
 
   const [state, setState] = useState<PlayerState>({
     currentTrack: null,
     queue: [],
     queueIndex: 0,
+    order: [],
+    orderPos: 0,
     playing: false,
     position: 0,
     duration: 0,
-    shuffle: localStorage.getItem('shuffle') === 'true',
-    repeat: 'none',
+    shuffle: readShuffle(),
+    repeat: readRepeat(),
     speed: 1,
+    effect: null,
   })
 
-  // Defined before effects so restore effect can call it directly
   const loadTrack = useCallback(async (track: Track, autoPlay = true) => {
     const audio = audioRef.current
     if (!audio) return
@@ -62,6 +127,7 @@ export function usePlayer() {
       : track.fileBlob
     if (!fileBlob) return
 
+    lastPositionRef.current = 0
     const url = URL.createObjectURL(fileBlob)
     objectUrlRef.current = url
     audio.src = url
@@ -69,16 +135,35 @@ export function usePlayer() {
 
     if (autoPlay) {
       resumeEQ()
-      audio.play().catch(() => {})
+      audio.play().catch(() => {}) // autoplay rejection: the UI still shows paused
     }
+  }, [])
+
+  // What to do when the current track runs out. Stable, so the 'ended' listener
+  // can be wired up once at mount without a mutable ref.
+  const advance = useCallback(() => {
+    setState(s => {
+      if (!s.order.length) return s
+      if (s.repeat === 'one') return playAt(s, s.order, s.orderPos)
+      const next = advanceOrder(s.order, s.orderPos, s.shuffle, s.repeat === 'all')
+      if (!next) return { ...s, playing: false, effect: { kind: 'pause' } }
+      return playAt(s, next.order, next.orderPos)
+    })
   }, [])
 
   // Init audio element once
   useEffect(() => {
     const audio = new Audio()
     audio.preload = 'auto'
+    audio.setAttribute('playsinline', '')
+    // Kept in the document rather than detached. WebKit treats an element that
+    // is not in the tree as a second-class citizen for Now Playing and remote
+    // commands, and this player has always used a bare `new Audio()`.
+    audio.style.cssText = 'position:fixed;width:0;height:0;opacity:0;pointer-events:none'
+    document.body.appendChild(audio)
     audioRef.current = audio
     setAudioElement(audio)
+    logEvent('audio element created', describeAudio(audio))
 
     let rafPending: number | null = null
     const onTimeUpdate = () => {
@@ -91,10 +176,40 @@ export function usePlayer() {
         setState(s => ({ ...s, position: t }))
       })
     }
-    const onDurationChange = () => setState(s => ({ ...s, duration: audio.duration || 0 }))
-    const onPlay = () => setState(s => ({ ...s, playing: true }))
-    const onPause = () => setState(s => ({ ...s, playing: false }))
-    const onEnded = () => advanceRef.current()
+    const syncPosition = () => updatePositionState(audio.currentTime, audio.duration, audio.playbackRate)
+    const onDurationChange = () => {
+      syncPosition()
+      setState(s => ({ ...s, duration: audio.duration || 0 }))
+    }
+    // Mirror into Media Session synchronously. These listeners run even when the
+    // page is suspended and React never gets to commit a render.
+    const onPlay = () => {
+      logEvent('element:play', describeAudio(audio))
+      setPlaybackState(true)
+      syncPosition()
+      setState(s => ({ ...s, playing: true }))
+    }
+    const onPause = () => {
+      logEvent('element:pause', describeAudio(audio))
+      setPlaybackState(false)
+      syncPosition()
+      setState(s => ({ ...s, playing: false }))
+    }
+    const noisyEvents = ['error', 'stalled', 'waiting', 'emptied', 'suspend', 'abort'] as const
+    const onNoisy = (e: Event) => logEvent(`element:${e.type}`, describeAudio(audio))
+
+    // Safari may have played or paused the element natively while this page was
+    // frozen, and those events never reached us. On the way back, the element is
+    // the source of truth.
+    const resyncFromElement = () => {
+      logEvent('page visible again', describeAudio(audio))
+      syncPosition()
+      setState(s =>
+        s.playing === !audio.paused && Math.abs(s.position - audio.currentTime) < 0.5
+          ? s
+          : { ...s, playing: !audio.paused, position: audio.currentTime }
+      )
+    }
     const onLoadedMetadata = () => {
       if (pendingSeekRef.current !== null) {
         audio.currentTime = Math.min(pendingSeekRef.current, Math.max(0, audio.duration - 0.5))
@@ -103,18 +218,36 @@ export function usePlayer() {
     }
 
     // Release EQ whenever the page goes hidden so ctx.close() has time to
-    // complete long before the user might press play from the lock screen.
+    // complete long before the user might press play from the lock screen. That
+    // also puts the element back on the default output, which is what lets
+    // Safari drive it natively while we are frozen.
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') releaseEQ()
+      if (document.visibilityState === 'hidden') {
+        logEvent('page hidden', describeAudio(audio))
+        releaseEQ()
+      } else {
+        resyncFromElement()
+      }
     }
+    const onFreeze = () => logEvent('page FROZEN by iOS', describeAudio(audio))
+    const onResume = () => logEvent('page resumed by iOS', describeAudio(audio))
+    const onPageHide = (e: PageTransitionEvent) =>
+      logEvent('pagehide', `persisted=${e.persisted} ${describeAudio(audio)}`)
 
     audio.addEventListener('timeupdate', onTimeUpdate)
     audio.addEventListener('durationchange', onDurationChange)
     audio.addEventListener('loadedmetadata', onLoadedMetadata)
     audio.addEventListener('play', onPlay)
     audio.addEventListener('pause', onPause)
-    audio.addEventListener('ended', onEnded)
+    audio.addEventListener('ended', advance)
+    audio.addEventListener('seeked', syncPosition)
+    audio.addEventListener('ratechange', syncPosition)
+    for (const type of noisyEvents) audio.addEventListener(type, onNoisy)
     document.addEventListener('visibilitychange', onVisibilityChange)
+    document.addEventListener('freeze', onFreeze)
+    document.addEventListener('resume', onResume)
+    window.addEventListener('pageshow', resyncFromElement)
+    window.addEventListener('pagehide', onPageHide as EventListener)
 
     return () => {
       if (rafPending !== null) cancelAnimationFrame(rafPending)
@@ -123,12 +256,45 @@ export function usePlayer() {
       audio.removeEventListener('loadedmetadata', onLoadedMetadata)
       audio.removeEventListener('play', onPlay)
       audio.removeEventListener('pause', onPause)
-      audio.removeEventListener('ended', onEnded)
+      audio.removeEventListener('ended', advance)
+      audio.removeEventListener('seeked', syncPosition)
+      audio.removeEventListener('ratechange', syncPosition)
+      for (const type of noisyEvents) audio.removeEventListener(type, onNoisy)
       document.removeEventListener('visibilitychange', onVisibilityChange)
+      document.removeEventListener('freeze', onFreeze)
+      document.removeEventListener('resume', onResume)
+      window.removeEventListener('pageshow', resyncFromElement)
+      window.removeEventListener('pagehide', onPageHide as EventListener)
       audio.pause()
+      audio.remove()
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
     }
-  }, [])
+  }, [advance])
+
+  // The one place that touches the audio element in response to state changes.
+  const { effect, currentTrack } = state
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio || !effect) return
+
+    if (effect.kind === 'pause') {
+      audio.pause()
+      return
+    }
+
+    if (effect.kind === 'stop' || !currentTrack) {
+      audio.pause()
+      audio.removeAttribute('src')
+      audio.load()
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current)
+        objectUrlRef.current = null
+      }
+      return
+    }
+
+    loadTrack(currentTrack, effect.autoPlay)
+  }, [effect, currentTrack, loadTrack])
 
   // Restore last session on mount — loads track paused at saved position
   useEffect(() => {
@@ -155,14 +321,23 @@ export function usePlayer() {
 
         if (session.position > 2) pendingSeekRef.current = session.position
 
+        // Loaded directly rather than through the effect, so the restored track
+        // stays paused and the saved position survives.
         await loadTrack(track, false)
+
+        const shuffle = session.shuffle ?? readShuffle()
+        const order = shuffle
+          ? shuffledOrder(validTracks.length, idx)
+          : identityOrder(validTracks.length)
 
         setState(s => ({
           ...s,
           queue: validTracks,
           queueIndex: idx,
+          order,
+          orderPos: shuffle ? 0 : idx,
           currentTrack: track,
-          shuffle: session.shuffle ?? s.shuffle,
+          shuffle,
           repeat: (session.repeat as RepeatMode) ?? s.repeat,
           speed: session.speed ?? 1,
         }))
@@ -188,34 +363,45 @@ export function usePlayer() {
   }, [state.currentTrack?.id, state.queue, state.queueIndex, state.position, state.shuffle, state.repeat, state.speed])
 
   const playQueue = useCallback((tracks: Track[], startIndex: number) => {
-    setState(s => ({
-      ...s,
-      queue: tracks,
-      queueIndex: startIndex,
-      currentTrack: tracks[startIndex],
-    }))
-    loadTrack(tracks[startIndex], true)
-  }, [loadTrack])
+    setState(s => {
+      if (!tracks.length) return s
+      const start = Math.max(0, Math.min(tracks.length - 1, startIndex))
+      const order = s.shuffle ? shuffledOrder(tracks.length, start) : identityOrder(tracks.length)
+      return playAt({ ...s, queue: tracks }, order, s.shuffle ? 0 : start)
+    })
+  }, [])
 
+  // Driven by the lock screen and AirPods via the Media Session handlers.
   const play = useCallback(() => {
+    const audio = audioRef.current
+    logEvent('play() entered', describeAudio(audio))
     // Must stay synchronous — iOS loses the Media Session user gesture context
     // across await boundaries, causing audio.play() to silently fail.
     if (document.visibilityState === 'hidden') {
       releaseEQ() // synchronously free AudioContext so audio routes to speakers
     } else {
-      resumeEQ() // fire-and-forget resume in foreground (no await)
+      resumeEQ()
     }
-    audioRef.current?.play().catch(() => {})
+    setPlaybackState(true)
+    audio?.play().then(
+      () => logEvent('play() resolved', describeAudio(audio)),
+      (err: unknown) => {
+        logEvent('play() REJECTED', err instanceof Error ? `${err.name}: ${err.message}` : String(err))
+        setPlaybackState(false)
+      }
+    )
   }, [])
 
-  const pause = useCallback(() => {
-    audioRef.current?.pause()
-    // Release the AudioContext now, while we have time before the user presses
-    // play again. ctx.close() is async at the native level — doing it here
-    // (seconds before play) ensures it's fully closed by the time play() runs.
+  const pauseElement = useCallback(() => {
+    const audio = audioRef.current
+    logEvent('pause() entered', describeAudio(audio))
+    setPlaybackState(false)
+    audio?.pause()
     if (document.visibilityState === 'hidden') releaseEQ()
   }, [])
 
+  // In-app play/pause button. Lock screen and AirPods do not come through here —
+  // Safari drives the element directly for those.
   const togglePlay = useCallback(() => {
     const audio = audioRef.current
     if (!audio) return
@@ -233,22 +419,13 @@ export function usePlayer() {
 
   const next = useCallback(() => {
     setState(s => {
-      if (!s.queue.length) return s
-      let nextIndex: number
-      if (s.shuffle) {
-        nextIndex = Math.floor(Math.random() * s.queue.length)
-      } else {
-        nextIndex = s.queueIndex + 1
-        if (nextIndex >= s.queue.length) {
-          if (s.repeat === 'all') nextIndex = 0
-          else return { ...s, playing: false }
-        }
-      }
-      const track = s.queue[nextIndex]
-      loadTrack(track, true)
-      return { ...s, queueIndex: nextIndex, currentTrack: track }
+      if (!s.order.length) return s
+      // A manual skip ignores repeat-one — the user asked for a different song.
+      const adv = advanceOrder(s.order, s.orderPos, s.shuffle, s.repeat === 'all')
+      if (!adv) return { ...s, playing: false, effect: { kind: 'pause' } }
+      return playAt(s, adv.order, adv.orderPos)
     })
-  }, [loadTrack])
+  }, [])
 
   const prev = useCallback(() => {
     const audio = audioRef.current
@@ -257,139 +434,161 @@ export function usePlayer() {
       return
     }
     setState(s => {
-      if (!s.queue.length) return s
-      const prevIndex = s.queueIndex - 1 < 0 ? 0 : s.queueIndex - 1
-      const track = s.queue[prevIndex]
-      loadTrack(track, true)
-      return { ...s, queueIndex: prevIndex, currentTrack: track }
+      if (!s.order.length) return s
+      return playAt(s, s.order, s.orderPos > 0 ? s.orderPos - 1 : 0)
     })
-  }, [loadTrack])
+  }, [])
 
   const toggleShuffle = useCallback(() => {
     setState(s => {
-      const next = !s.shuffle
-      try { localStorage.setItem('shuffle', String(next)) } catch {}
-      return { ...s, shuffle: next }
+      const shuffle = !s.shuffle
+      if (!s.queue.length) return { ...s, shuffle, order: [], orderPos: 0 }
+      // Re-deal the lap around whatever is playing now; the current track keeps going.
+      const order = shuffle
+        ? shuffledOrder(s.queue.length, s.queueIndex)
+        : identityOrder(s.queue.length)
+      return { ...s, shuffle, order, orderPos: shuffle ? 0 : s.queueIndex }
+    })
+  }, [])
+
+  const cycleRepeat = useCallback(() => {
+    setState(s => {
+      const modes: RepeatMode[] = ['none', 'all', 'one']
+      return { ...s, repeat: modes[(modes.indexOf(s.repeat) + 1) % modes.length] }
     })
   }, [])
 
   const playNext = useCallback((track: Track) => {
     setState(s => {
-      if (!s.currentTrack) {
-        loadTrack(track, true)
-        return { ...s, queue: [track], queueIndex: 0, currentTrack: track }
-      }
-      const newQueue = [...s.queue]
-      newQueue.splice(s.queueIndex + 1, 0, track)
-      return { ...s, queue: newQueue }
-    })
-  }, [loadTrack])
-
-  const addToQueue = useCallback((track: Track) => {
-    setState(s => {
-      if (!s.currentTrack) {
-        loadTrack(track, true)
-        return { ...s, queue: [track], queueIndex: 0, currentTrack: track }
-      }
-      return { ...s, queue: [...s.queue, track] }
-    })
-  }, [loadTrack])
-
-  const jumpTo = useCallback((index: number) => {
-    setState(s => {
-      if (index < 0 || index >= s.queue.length) return s
-      const track = s.queue[index]
-      loadTrack(track, true)
-      return { ...s, queueIndex: index, currentTrack: track }
-    })
-  }, [loadTrack])
-
-  const reorderQueue = useCallback((fromIndex: number, toIndex: number) => {
-    setState(s => {
-      if (fromIndex === toIndex) return s
-      const newQueue = [...s.queue]
-      const [moved] = newQueue.splice(fromIndex, 1)
-      newQueue.splice(toIndex, 0, moved)
-      let qi = s.queueIndex
-      if (fromIndex === qi) qi = toIndex
-      else if (fromIndex < qi && toIndex >= qi) qi--
-      else if (fromIndex > qi && toIndex <= qi) qi++
-      return { ...s, queue: newQueue, queueIndex: qi }
+      if (!s.currentTrack || !s.queue.length) return playAt({ ...s, queue: [track] }, [0], 0)
+      const at = s.queueIndex + 1
+      const queue = [...s.queue]
+      queue.splice(at, 0, track)
+      const order = orderAfterInsert(s.order, at, s.orderPos + 1)
+      return { ...s, queue, order, queueIndex: order[s.orderPos] }
     })
   }, [])
 
-  const removeFromQueue = useCallback((index: number) => {
+  const addToQueue = useCallback((track: Track) => {
     setState(s => {
-      const newQueue = [...s.queue]
-      newQueue.splice(index, 1)
-      if (index === s.queueIndex) {
-        if (newQueue.length === 0) {
-          return { ...s, queue: [], queueIndex: 0, currentTrack: null, playing: false }
-        }
-        const nextIndex = Math.min(index, newQueue.length - 1)
-        const track = newQueue[nextIndex]
-        loadTrack(track, s.playing)
-        return { ...s, queue: newQueue, queueIndex: nextIndex, currentTrack: track }
-      }
-      const qi = index < s.queueIndex ? s.queueIndex - 1 : s.queueIndex
-      return { ...s, queue: newQueue, queueIndex: qi }
+      if (!s.currentTrack || !s.queue.length) return playAt({ ...s, queue: [track] }, [0], 0)
+      const queue = [...s.queue, track]
+      const order = orderAfterInsert(s.order, queue.length - 1, s.order.length)
+      return { ...s, queue, order, queueIndex: order[s.orderPos] }
     })
-  }, [loadTrack])
+  }, [])
 
-  const cycleRepeat = useCallback(() => {
+  const jumpTo = useCallback((queueIndex: number) => {
     setState(s => {
-      const modes: RepeatMode[] = ['none', 'all', 'one']
-      const next = modes[(modes.indexOf(s.repeat) + 1) % modes.length]
-      return { ...s, repeat: next }
+      const pos = s.order.indexOf(queueIndex)
+      if (pos < 0) return s
+      return playAt(s, s.order, pos)
+    })
+  }, [])
+
+  const reorderQueue = useCallback((from: number, to: number) => {
+    setState(s => {
+      const n = s.queue.length
+      if (from === to || from < 0 || from >= n || to < 0 || to >= n) return s
+      const queue = [...s.queue]
+      const [moved] = queue.splice(from, 1)
+      queue.splice(to, 0, moved)
+      const order = s.order.map(i => remapReorder(i, from, to))
+      return { ...s, queue, order, queueIndex: order[s.orderPos] }
+    })
+  }, [])
+
+  const removeFromQueue = useCallback((queueIndex: number) => {
+    setState(s => {
+      if (queueIndex < 0 || queueIndex >= s.queue.length) return s
+      const queue = s.queue.filter((_, i) => i !== queueIndex)
+      const order = orderAfterRemove(s.order, queueIndex)
+      if (!order.length) {
+        return {
+          ...s,
+          queue: [],
+          order: [],
+          orderPos: 0,
+          queueIndex: 0,
+          currentTrack: null,
+          playing: false,
+          effect: { kind: 'stop' },
+        }
+      }
+      if (queueIndex === s.queueIndex) {
+        // Whatever slid into this slot becomes the current track.
+        const orderPos = Math.min(s.orderPos, order.length - 1)
+        return playAt({ ...s, queue }, order, orderPos, s.playing)
+      }
+      const removedPos = s.order.indexOf(queueIndex)
+      const orderPos = removedPos < s.orderPos ? s.orderPos - 1 : s.orderPos
+      return { ...s, queue, order, orderPos, queueIndex: order[orderPos] }
     })
   }, [])
 
   const setSpeed = useCallback((speed: number) => {
     setState(s => ({ ...s, speed }))
-    if (audioRef.current) audioRef.current.playbackRate = speed
+    applyRate(audioRef.current, speed)
   }, [])
 
   useEffect(() => {
-    if (audioRef.current) audioRef.current.playbackRate = state.speed
+    applyRate(audioRef.current, state.speed)
   }, [state.speed])
 
-  // Wire advance logic — runs every render so it always captures fresh state
+  // What plays after the current track, in play order — this is what the queue
+  // sheet shows, so it follows the shuffled lap rather than the raw queue.
+  const upcoming = useMemo<QueueEntry[]>(
+    () =>
+      state.order
+        .slice(state.orderPos + 1)
+        .map(i => ({ track: state.queue[i], queueIndex: i }))
+        .filter((e): e is QueueEntry => e.track !== undefined),
+    [state.order, state.orderPos, state.queue]
+  )
+
+  // Persist playback preferences outside the updaters, so the updaters stay pure.
   useEffect(() => {
-    advanceRef.current = () => {
-      setState(s => {
-        if (!s.queue.length) return s
-        if (s.repeat === 'one') {
-          loadTrack(s.queue[s.queueIndex], true)
-          return s
-        }
-        let nextIndex: number
-        if (s.shuffle) {
-          nextIndex = Math.floor(Math.random() * s.queue.length)
-        } else {
-          nextIndex = s.queueIndex + 1
-          if (nextIndex >= s.queue.length) {
-            if (s.repeat === 'all') nextIndex = 0
-            else return { ...s, playing: false }
-          }
-        }
-        const track = s.queue[nextIndex]
-        loadTrack(track, true)
-        return { ...s, queueIndex: nextIndex, currentTrack: track }
-      })
+    try {
+      localStorage.setItem('shuffle', String(state.shuffle))
+    } catch {
+      // storage blocked (private browsing) — the setting just won't survive a restart
     }
-  })
+  }, [state.shuffle])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('repeat', state.repeat)
+    } catch {
+      // storage blocked (private browsing)
+    }
+  }, [state.repeat])
 
   // Update Media Session when track changes
   useEffect(() => {
-    if (!state.currentTrack) return
-    updateMediaSession(state.currentTrack, { play, pause, next, prev, seekTo: seek })
-  }, [state.currentTrack, play, pause, next, prev, seek])
+    if (!currentTrack) {
+      clearMediaSession()
+      return
+    }
+    updateMediaSession(currentTrack, {
+      play, pause: pauseElement, next, prev, seekTo: seek, stop: pauseElement,
+    })
+  }, [currentTrack, play, pauseElement, next, prev, seek])
 
-  // Sync Media Session playback state
-  useEffect(() => {
-    if (!('mediaSession' in navigator)) return
-    navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused'
-  }, [state.playing])
-
-  return { state, playQueue, playNext, addToQueue, togglePlay, seek, next, prev, toggleShuffle, cycleRepeat, reorderQueue, removeFromQueue, jumpTo, setSpeed }
+  return {
+    state,
+    upcoming,
+    playQueue,
+    playNext,
+    addToQueue,
+    togglePlay,
+    seek,
+    next,
+    prev,
+    toggleShuffle,
+    cycleRepeat,
+    reorderQueue,
+    removeFromQueue,
+    jumpTo,
+    setSpeed,
+  }
 }

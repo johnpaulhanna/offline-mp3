@@ -37,6 +37,7 @@ html, body, #root {
 
 * {
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
   box-sizing: border-box;
   touch-action: manipulation;
   user-select: none;
@@ -69,4 +70,12 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 50%;
   background: #fff;
   margin-top: -5px;
+}
+
+/* Library rows are cheap to skip when off screen: the browser stops laying out
+   and painting them until they scroll close, which is what keeps a few hundred
+   songs scrolling smoothly. Ignored by browsers that don't support it. */
+.library-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 72px;
 }
