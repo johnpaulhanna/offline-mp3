@@ -8,6 +8,7 @@ import { TrackContextMenu } from './TrackContextMenu'
 import { StorageInfo } from './StorageInfo'
 import { BackupBar } from './BackupBar'
 import { DiagnosticsSheet } from './DiagnosticsSheet'
+import { ConfirmDialog } from './ConfirmDialog'
 
 type DisplaySort = 'alpha' | 'newest' | 'oldest'
 const SORT_LABELS: Record<DisplaySort, string> = { alpha: 'A-Z', newest: 'Newest', oldest: 'Oldest' }
@@ -32,6 +33,20 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
   const [contextTrack, setContextTrack] = useState<{ track: Track; idx: number; all: Track[] } | null>(null)
   const [addingTrackId, setAddingTrackId] = useState<number | null>(null)
   const [showDiagnostics, setShowDiagnostics] = useState(false)
+
+  // Deleting a track destroys the only copy of the audio. Every path that does
+  // it goes through here first.
+  const [confirming, setConfirming] = useState<
+    { title: string; message?: string; confirmLabel: string; run: () => void } | null
+  >(null)
+
+  const confirmDeleteTrack = (track: Track) =>
+    setConfirming({
+      title: `Delete "${track.title}"?`,
+      message: 'The song file is removed from this device. This cannot be undone.',
+      confirmLabel: 'Delete Song',
+      run: () => { void deleteTrack(track.id!) },
+    })
 
   // Multi-select
   const [selectMode, setSelectMode] = useState(false)
@@ -78,10 +93,15 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
     setSelected(new Set())
   }
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (selected.size === 0) return
-    await deleteTracks([...selected])
-    exitSelectMode()
+    const ids = [...selected]
+    setConfirming({
+      title: `Delete ${ids.length} song${ids.length === 1 ? '' : 's'}?`,
+      message: 'The song files are removed from this device. This cannot be undone.',
+      confirmLabel: `Delete ${ids.length} Song${ids.length === 1 ? '' : 's'}`,
+      run: () => { void deleteTracks(ids).then(exitSelectMode) },
+    })
   }
 
   // Gesture handlers
@@ -156,8 +176,10 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
       gestureRef.current = null
 
       if (currentX <= -DELETE_FULL) {
+        // A full swipe asks rather than deletes — it is far too easy to trigger
+        // by accident while scrolling, and there is no undo.
         setOpenSwipeId(null)
-        deleteTrack(track.id!)
+        confirmDeleteTrack(track)
       } else if (currentX <= -DELETE_SNAP / 2) {
         setOpenSwipeId(track.id!)
       } else {
@@ -317,7 +339,7 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
                     <div
                       className="absolute right-0 top-0 bottom-0 flex items-center justify-end rounded-2xl overflow-hidden"
                       style={{ width: DELETE_SNAP, background: '#ff3b30' }}
-                      onClick={() => { setOpenSwipeId(null); deleteTrack(track.id!) }}
+                      onClick={() => { setOpenSwipeId(null); confirmDeleteTrack(track) }}
                     >
                       <span className="text-white text-xs font-bold pr-4">Delete</span>
                     </div>
@@ -430,11 +452,21 @@ export function Library({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, curre
             await toggleLike(contextTrack.track.id!)
             setContextTrack(null)
           }}
-          onDelete={async () => { await deleteTrack(contextTrack.track.id!); setContextTrack(null) }}
+          onDelete={() => { const t = contextTrack.track; setContextTrack(null); confirmDeleteTrack(t) }}
         />
       )}
 
       {showDiagnostics && <DiagnosticsSheet onClose={() => setShowDiagnostics(false)} />}
+
+      {confirming && (
+        <ConfirmDialog
+          title={confirming.title}
+          message={confirming.message}
+          confirmLabel={confirming.confirmLabel}
+          onConfirm={confirming.run}
+          onClose={() => setConfirming(null)}
+        />
+      )}
 
       {addingTrackId != null && (
         <AddToPlaylistModal

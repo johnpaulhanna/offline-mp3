@@ -4,6 +4,7 @@ import type { Track } from '../db'
 import { CoverArt } from './CoverArt'
 import { TrackContextMenu } from './TrackContextMenu'
 import { AddToPlaylistModal } from './AddToPlaylistModal'
+import { ConfirmDialog } from './ConfirmDialog'
 
 interface Props {
   onPlay: (tracks: Track[], index: number) => void
@@ -31,6 +32,8 @@ export function AlbumsView({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, cu
   const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null)
   const [contextTrack, setContextTrack] = useState<{ track: Track; idx: number; all: Track[] } | null>(null)
   const [addingTrackId, setAddingTrackId] = useState<number | null>(null)
+  // Deleting a track destroys the only copy of the audio; ask first.
+  const [confirmingDelete, setConfirmingDelete] = useState<Track | null>(null)
 
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lpStart = useRef<{ x: number; y: number } | null>(null)
@@ -141,11 +144,20 @@ export function AlbumsView({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, cu
             onAddToQueue={() => { onAddToQueue(contextTrack.track); setContextTrack(null) }}
             onAddToPlaylist={() => { setAddingTrackId(contextTrack.track.id!); setContextTrack(null) }}
             onToggleLike={async () => { await toggleLike(contextTrack.track.id!); setContextTrack(null) }}
-            onDelete={async () => { await deleteTrack(contextTrack.track.id!); setContextTrack(null) }}
+            onDelete={() => { const t = contextTrack.track; setContextTrack(null); setConfirmingDelete(t) }}
           />
         )}
         {addingTrackId != null && (
           <AddToPlaylistModal trackIds={[addingTrackId]} onClose={() => setAddingTrackId(null)} />
+        )}
+        {confirmingDelete && (
+          <ConfirmDialog
+            title={`Delete "${confirmingDelete.title}"?`}
+            message="The song file is removed from this device. This cannot be undone."
+            confirmLabel="Delete Song"
+            onConfirm={() => { void deleteTrack(confirmingDelete.id!) }}
+            onClose={() => setConfirmingDelete(null)}
+          />
         )}
       </>
     )

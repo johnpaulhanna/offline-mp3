@@ -4,6 +4,7 @@ import { db } from '../db'
 import type { Playlist, Track } from '../db'
 import { PlusIcon, PlaylistIcon } from './Icons'
 import { CoverArt } from './CoverArt'
+import { ConfirmDialog } from './ConfirmDialog'
 
 interface Props {
   onSelect: (playlist: Playlist) => void
@@ -65,6 +66,8 @@ function PlaylistContextMenu({
     if (name && name !== playlist.name) await renamePlaylist(playlist.id!, name)
     close()
   }
+
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const handleDelete = async () => {
     await deletePlaylist(playlist.id!)
@@ -142,7 +145,7 @@ function PlaylistContextMenu({
                 <span className="text-white text-sm font-medium">Rename</span>
               </button>
 
-              <button onClick={handleDelete} className="w-full flex items-center gap-4 px-5 py-4 active:bg-white/5">
+              <button onClick={() => setConfirmingDelete(true)} className="w-full flex items-center gap-4 px-5 py-4 active:bg-white/5">
                 <span className="text-red-400 text-lg w-6 text-center leading-none">✕</span>
                 <span className="text-red-400 text-sm font-medium">Delete Playlist</span>
               </button>
@@ -157,6 +160,16 @@ function PlaylistContextMenu({
           Cancel
         </button>
       </div>
+
+      {confirmingDelete && (
+        <ConfirmDialog
+          title={`Delete "${playlist.name}"?`}
+          message="The playlist is removed. The songs in it stay in your library."
+          confirmLabel="Delete Playlist"
+          onConfirm={handleDelete}
+          onClose={() => setConfirmingDelete(false)}
+        />
+      )}
     </div>
   )
 }
