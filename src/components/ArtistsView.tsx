@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useTracks } from '../hooks/useTracks'
 import type { Track } from '../db'
 import { CoverArt } from './CoverArt'
@@ -60,16 +60,26 @@ export function ArtistsView({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, c
     return `${m}:${sec.toString().padStart(2, '0')}`
   }
 
-  const artistMap = new Map<string, Track[]>()
-  for (const track of allTracks) {
-    const a = track.artist || 'Unknown Artist'
-    if (!artistMap.has(a)) artistMap.set(a, [])
-    artistMap.get(a)!.push(track)
-  }
-  const artists: ArtistGroup[] = Array.from(artistMap.entries()).map(([name, tracks]) => ({ name, tracks }))
+  // Memoised: without this the whole library is regrouped on every render, and
+  // the player's position ticks re-render this view several times a second.
+  const artistMap = useMemo(() => {
+    const map = new Map<string, Track[]>()
+    for (const track of allTracks) {
+      const a = track.artist || 'Unknown Artist'
+      if (!map.has(a)) map.set(a, [])
+      map.get(a)!.push(track)
+    }
+    return map
+  }, [allTracks])
+  const artists: ArtistGroup[] = useMemo(
+    () => Array.from(artistMap.entries()).map(([name, tracks]) => ({ name, tracks })),
+    [artistMap]
+  )
 
-  if (selectedArtist) {
-    const artistTracks = artistMap.get(selectedArtist) ?? []
+  // Falls through to the list when the artist is gone — deleting their last
+  // track used to strand you on an empty detail page.
+  const artistTracks = selectedArtist ? artistMap.get(selectedArtist) : undefined
+  if (selectedArtist && artistTracks) {
     return (
       <>
         <div className="flex flex-col flex-1 overflow-hidden">
@@ -136,6 +146,9 @@ export function ArtistsView({ onPlay, onPlayAndOpen, onPlayNext, onAddToQueue, c
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       <div className="overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
+        {artists.length === 0 && (
+          <p className="text-gray-500 text-sm text-center mt-16">No artists yet</p>
+        )}
         {artists.map(artist => (
           <div
             key={artist.name}
