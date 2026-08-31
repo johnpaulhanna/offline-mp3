@@ -67,6 +67,18 @@ export async function removeFromPlaylist(playlistTrackId: number) {
   })
 }
 
+export async function removeManyFromPlaylist(playlistTrackIds: number[]) {
+  if (!playlistTrackIds.length) return
+  // One transaction, and one renumber per affected playlist. Removing them one
+  // at a time renumbered the whole playlist after every single removal.
+  await db.transaction('rw', db.playlistTracks, async () => {
+    const rows = await db.playlistTracks.bulkGet(playlistTrackIds)
+    const playlistIds = new Set(rows.filter(r => r != null).map(r => r!.playlistId))
+    await db.playlistTracks.bulkDelete(playlistTrackIds)
+    for (const playlistId of playlistIds) await renumberPlaylist(playlistId)
+  })
+}
+
 export async function renamePlaylist(id: number, name: string) {
   await db.playlists.update(id, { name: name.trim() })
 }

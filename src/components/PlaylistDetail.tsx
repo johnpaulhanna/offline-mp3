@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useMemo } from 'react'
-import { usePlaylistTracks, removeFromPlaylist, updatePlaylistCover } from '../hooks/usePlaylists'
+import { usePlaylistTracks, removeFromPlaylist, removeManyFromPlaylist, updatePlaylistCover } from '../hooks/usePlaylists'
 import { toggleLike } from '../hooks/useTracks'
 import { importFiles, AUDIO_ACCEPT } from '../lib/importTracks'
 import { useBlobUrl } from '../hooks/useBlobUrl'
@@ -10,8 +10,13 @@ import { TrackContextMenu } from './TrackContextMenu'
 import { AddToPlaylistModal } from './AddToPlaylistModal'
 import { AddSongsModal } from './AddSongsModal'
 
-type DisplaySort = 'alpha' | 'newest' | 'oldest'
-const SORT_LABELS: Record<DisplaySort, string> = { alpha: 'A-Z', newest: 'Newest', oldest: 'Oldest' }
+type DisplaySort = 'manual' | 'alpha' | 'newest' | 'oldest'
+const SORT_LABELS: Record<DisplaySort, string> = {
+  manual: 'Playlist order',
+  alpha: 'A-Z',
+  newest: 'Newest',
+  oldest: 'Oldest',
+}
 
 interface Props {
   playlist: Playlist
@@ -79,7 +84,10 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
     const pairs = tracks.map((t, i) => ({ track: t, pt: pts[i] }))
 
     let sorted: typeof pairs
-    if (sort === 'alpha') {
+    if (sort === 'manual') {
+      // usePlaylistTracks already returns them by position.
+      sorted = pairs
+    } else if (sort === 'alpha') {
       sorted = [...pairs].sort((a, b) => a.track.title.toLowerCase().localeCompare(b.track.title.toLowerCase()))
     } else if (sort === 'newest') {
       sorted = [...pairs].sort((a, b) => b.track.addedAt - a.track.addedAt)
@@ -118,9 +126,7 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
     const selectedPtIds = displayPairs
       .filter(p => selected.has(p.track.id!) && p.pt?.id)
       .map(p => p.pt!.id!)
-    for (const ptId of selectedPtIds) {
-      await removeFromPlaylist(ptId)
-    }
+    await removeManyFromPlaylist(selectedPtIds)
     exitSelectMode()
   }
 
@@ -267,13 +273,13 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
           {!selectMode && tracks.length > 0 && (
             <div className="flex gap-3 px-5 pb-4">
               <button
-                onClick={() => onPlayAll(tracks, 0)}
+                onClick={() => onPlayAll(displayPairs.map(p => p.track), 0)}
                 className="flex-1 flex items-center justify-center gap-2 bg-white text-black text-sm font-bold py-3 rounded-2xl active:scale-95 transition-transform"
               >
                 <PlayIcon size={14} /> Play
               </button>
               <button
-                onClick={() => onPlayShuffle(tracks)}
+                onClick={() => onPlayShuffle(displayPairs.map(p => p.track))}
                 className="flex-1 flex items-center justify-center gap-2 bg-white/[0.12] text-white text-sm font-bold py-3 rounded-2xl active:scale-95 transition-transform border border-white/10"
               >
                 <ShuffleIcon size={14} /> Shuffle
@@ -305,7 +311,7 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
                 </button>
                 {showSortMenu && (
                   <div className="absolute top-full left-0 mt-1 bg-[#1c1c1e] border border-white/10 rounded-2xl overflow-hidden shadow-2xl z-50 min-w-[140px]">
-                    {(['alpha', 'newest', 'oldest'] as DisplaySort[]).map(opt => (
+                    {(['manual', 'alpha', 'newest', 'oldest'] as DisplaySort[]).map(opt => (
                       <button
                         key={opt}
                         onClick={() => { setSort(opt); setShowSortMenu(false) }}
@@ -426,7 +432,7 @@ export function PlaylistDetail({ playlist, currentTrackId, playing, onPlay, onPl
         <TrackContextMenu
           track={contextTrack.track}
           onClose={() => setContextTrack(null)}
-          onPlay={() => { onPlayAll(tracks, contextTrack.idx); setContextTrack(null) }}
+          onPlay={() => { onPlayAll(displayPairs.map(p => p.track), contextTrack.idx); setContextTrack(null) }}
           onPlayNext={() => { onPlayNext(contextTrack.track); setContextTrack(null) }}
           onAddToQueue={() => { onAddToQueue(contextTrack.track); setContextTrack(null) }}
           onAddToPlaylist={() => { setAddingTrackId(contextTrack.track.id!); setContextTrack(null) }}
